@@ -1,0 +1,45 @@
+\documentclass{article}
+\usepackage{syntax}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{amssymb}
+
+\title{OpalSemantics}
+\author{Alex Renda}
+\date{September 2017}
+
+\begin{document}
+
+\maketitle
+
+\section{SIMPL}
+
+Tiny mutable turing-incomplete language based on IMP with sets:
+
+\subsection{Grammar}
+
+\begin{grammar}
+<Var> ::= Any identifier
+
+<Set> ::= $\varnothing$
+\alt <Var>
+
+<Bool> ::= <Set> $\in$ <Set>
+
+<Com> ::= `skip'
+\alt `if' <Bool> `then' <Com> `else' <Com>
+\alt <Var> `:=' <Set>
+\alt <Com> `;' <Com>
+
+\end{grammar}
+
+\subsection{Small Step Semantics}
+
+
+\end{document}
+
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: t
+%%% End:
