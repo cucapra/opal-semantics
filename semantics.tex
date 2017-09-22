@@ -3,38 +3,206 @@
 \usepackage[utf8]{inputenc}
 \usepackage{amsmath}
 \usepackage{amssymb}
+\usepackage{bussproofs}
+\usepackage{todonotes}
 
-\title{OpalSemantics}
+\title{Opal Semantics}
 \author{Alex Renda}
 \date{September 2017}
+
+% thanks to Dexter Kozen's notes from http://www.cs.cornell.edu/courses/cs611/2006fa/
+\newcommand\bigcdot{\mathrel{\raisebox{1pt}{$\scriptscriptstyle\bullet$}}}
+\newcommand{\ifstmt}[3]{\texttt{if}\ #1\ \texttt{then}\ #2\ \texttt{else}\ #3}
+\newcommand{\config}[2]{\langle #1, #2 \rangle}
+\newcommand{\true}{\texttt{true}}
+\newcommand{\false}{\texttt{false}}
+\newcommand{\skipcom}{\texttt{skip}}
+\newcommand{\onestep}[1]{\rightarrow_{#1}}
+\newcommand{\com}{C}
+\newcommand{\bool}{B}
 
 \begin{document}
 
 \maketitle
 
-\section{SIMPL}
+\section{Description}
 
 Tiny mutable turing-incomplete language based on IMP with sets:
 
-\subsection{Grammar}
+\section{Grammar}
 
 \begin{grammar}
 <Var> ::= Any identifier
 
-<Set> ::= $\varnothing$
+<SExp> ::= $\varnothing$
 \alt <Var>
+\alt ( <SExp> . <SExp> )
 
-<Bool> ::= <Set> $\in$ <Set>
+<Bool> ::= <SExp> = <SExp>
+\alt <SExp> $\in$ <SExp>
+\alt <Bool> $\land$ <Bool>
+\alt <Bool> $\lor$ <Bool>
+\alt \true
+\alt \false
 
-<Com> ::= `skip'
-\alt `if' <Bool> `then' <Com> `else' <Com>
-\alt <Var> `:=' <Set>
-\alt <Com> `;' <Com>
+<Com> ::= \skipcom
+\alt \ifstmt{\synt{Bool}}{\synt{Com}}{\synt{Com}}
+\alt <Var> := <SExp>
+\alt <Com> ; <Com>
 
 \end{grammar}
 
-\subsection{Small Step Semantics}
+\section{Small Step Semantics}
+\begin{center}
+\begin{tabular}{c c c}
+$\textsc{Env}$  & :  & $\synt{Var} \rightarrow \synt{SExp}$ \\
+$\onestep\bool$  & :  & $(\synt{Bool} \times \textsc{Env}) \rightarrow \synt{Bool}$ \\
+$\onestep\com$  & :  & $(\synt{Com} \times \textsc{Env}) \rightarrow (\synt{Com}, \textsc{Env})$ \\
+\end{tabular}
+\end{center}
 
+\subsection{Boolean Relation}
+
+\todo[inline]{Should we ``typecheck'' at the evaluation stage? i.e. should we make sure that all sets are 100\% evaluable even if we can determine truth without it?}
+
+\subsubsection{Equality}
+
+\begin{prooftree}
+\AxiomC{$\sigma(v) = s_1$}
+\RightLabel{\textsc{Eq-VarL}}
+\UnaryInfC{$\config{v = s_2}{\sigma} \onestep\bool s_1 = s_2$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{$\sigma(v) = s_2$}
+\RightLabel{\textsc{Eq-VarR}}
+\UnaryInfC{$\config{s_1 = v}{\sigma} \onestep\bool s_1 = s_2$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{}
+\RightLabel{\textsc{Eq-Empty}}
+\UnaryInfC{$\config{\varnothing = \varnothing}{\sigma} \onestep\bool \true$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{}
+\RightLabel{\textsc{Eq-NotL}}
+\UnaryInfC{$\config{(s_1 . s_2) = \varnothing}{\sigma} \onestep\bool \false$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{}
+\RightLabel{\textsc{Eq-NotR}}
+\UnaryInfC{$\config{\varnothing = (s_3 . s_4)}{\sigma} \onestep\bool \false$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{}
+\RightLabel{\textsc{Eq-Prop}}
+\UnaryInfC{$\config{(s_1 . s_2) = (s_3 . s_4)}{\sigma} \onestep\bool (s_1 = s_3) \land (s_2 = s_4)$}
+\end{prooftree}
+
+\subsubsection{Membership}
+
+\begin{prooftree}
+\AxiomC{$\sigma(v) = s_2$}
+\RightLabel{\textsc{Mem-Var}}
+\UnaryInfC{$\config{s_1 \in v}{\sigma} \onestep\bool s_1 \in s_2$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{}
+\RightLabel{\textsc{Mem-Empty}}
+\UnaryInfC{$\config{s \in \varnothing}{\sigma} \onestep\bool \false$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{}
+\RightLabel{\textsc{Mem-Check}}
+\UnaryInfC{$\config{s_1 \in (s_1' . s_2)}{\sigma} \onestep\bool (s_1 = s_1' \lor s_1 \in s_2)$}
+\end{prooftree}
+
+\subsubsection{Conjunction}
+\begin{prooftree}
+\AxiomC{$\config{b_1}{\sigma} \onestep\bool b_1'$}
+\RightLabel{\textsc{Conj-Prop}}
+\UnaryInfC{$\config{b_1 \land b_2}{\sigma} \onestep\bool b_1' \land b_2$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{}
+\RightLabel{\textsc{Conj-True}}
+\UnaryInfC{$\config{\true \land b_2}{\sigma} \onestep\bool b_2$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{}
+\RightLabel{\textsc{Conj-False}}
+\UnaryInfC{$\config{\false \land b_2}{\sigma} \onestep\bool \false$}
+\end{prooftree}
+
+\subsubsection{Disjunction}
+\begin{prooftree}
+\AxiomC{$\config{b_1}{\sigma} \onestep\bool b_1'$}
+\RightLabel{\textsc{Disj-Prop}}
+\UnaryInfC{$\config{b_1 \lor b_2}{\sigma} \onestep\bool b_1' \lor b_2$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{}
+\RightLabel{\textsc{Disj-True}}
+\UnaryInfC{$\config{\true \lor b_2}{\sigma} \onestep\bool \true$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{}
+\RightLabel{\textsc{Disj-False}}
+\UnaryInfC{$\config{\false \lor b_2}{\sigma} \onestep\bool b_2$}
+\end{prooftree}
+
+\subsection{Command Relation}
+\subsubsection{If}
+
+\begin{prooftree}
+\AxiomC{$\config{b}{\sigma} \onestep\bool b'$}
+\RightLabel{\textsc{If-Prop}}
+\UnaryInfC{$\config{\ifstmt{b}{c_1}{c_2}}{\sigma} \onestep\com \config{\ifstmt{b'}{c_1}{c_2}}{\sigma}$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{}
+\RightLabel{\textsc{If-True}}
+\UnaryInfC{$\config{\ifstmt{\true}{c_1}{c_2}}{\sigma} \onestep\com \config{c_1}{\sigma}$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{}
+\RightLabel{\textsc{If-False}}
+\UnaryInfC{$\config{\ifstmt{\false}{c_1}{c_2}}{\sigma} \onestep\com \config{c_2}{\sigma}$}
+\end{prooftree}
+
+\subsubsection{Sequence}
+
+\begin{prooftree}
+\AxiomC{$\config{c_1}{\sigma} \onestep\com \config{c_1'}{\sigma'}$}
+\RightLabel{\textsc{Seq-Prop}}
+\UnaryInfC{$\config{c_1; c_2}{\sigma} \onestep\com \config{c_1'; c_2}{\sigma'}$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{}
+\RightLabel{\textsc{Seq-Skip}}
+\UnaryInfC{$\config{\skipcom; c_2}{\sigma} \onestep\com \config{c_2}{\sigma}$}
+\end{prooftree}
+
+\subsubsection{Assignment}
+
+\begin{prooftree}
+\AxiomC{}
+\RightLabel{\textsc{Seq-Prop}}
+\UnaryInfC{$\config{v := s}{\sigma} \onestep\com \config{\skipcom}{\sigma[v \mapsto s]}$}
+\end{prooftree}
 
 \end{document}
 
