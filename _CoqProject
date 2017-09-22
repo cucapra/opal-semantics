@@ -1,0 +1,10 @@
+-R lib/cpdtlib Cpdt
+
+lib/cpdtlib/CpdtTactics.v
+lib/cpdtlib/DepList.v
+lib/cpdtlib/MoreSpecif.v
+
+-R src OpalSrc
+
+src/OpalSemantics.v
+src/OpalInterp.v
