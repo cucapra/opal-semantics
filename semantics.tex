@@ -5,21 +5,37 @@
 \usepackage{amssymb}
 \usepackage{bussproofs}
 \usepackage{todonotes}
+\usepackage{xspace}
+\usepackage{tikz}
+\usepackage{graphicx}
 
 \title{Opal Semantics}
 \author{Alex Renda}
-\date{September 2017}
+\date{\today}
 
-% thanks to Dexter Kozen's notes from http://www.cs.cornell.edu/courses/cs611/2006fa/
-\newcommand\bigcdot{\mathrel{\raisebox{1pt}{$\scriptscriptstyle\bullet$}}}
-\newcommand{\ifstmt}[3]{\texttt{if}\ #1\ \texttt{then}\ #2\ \texttt{else}\ #3}
-\newcommand{\config}[2]{\langle #1, #2 \rangle}
+\newcommand{\skipcom}{\texttt{skip}}
+\newcommand{\seqcom}[2]{#1;\ #2}
+\newcommand{\ifcom}[3]{\texttt{if}\ #1\ \texttt{then}\ \{#2\}\ \texttt{else}\ \{#3\}}
+\newcommand{\withcom}[2]{\texttt{with}\ #1\ \texttt{do}\ \{#2\}}
+\newcommand{\atcom}[2]{\texttt{at}\ #1\ \texttt{do}\ \{#2\}}
+\newcommand{\hypcom}[2]{#1\ :=\ \texttt{hyp}\ \{#2\}}
+\newcommand{\commitcom}[1]{\texttt{commit}\ #1}
+\newcommand{\handlecom}[6]{\texttt{handle}\ #1.#2\ := \textit{#3}\ \texttt{with}\ #4\ \texttt{merge}\ #5\ \texttt{in}\ \{#6\}} % TODO: this should specify variables
+\newcommand{\opcom}[1]{\textit{#1}}
+\newcommand{\bigcdot}{\raisebox{-0.75ex}{\scalebox{2}{$\cdot$}}}
+\newcommand{\partialfunc}{\rightharpoonup}
+\newcommand{\config}[1]{\langle #1 \rangle}
 \newcommand{\true}{\texttt{true}}
 \newcommand{\false}{\texttt{false}}
-\newcommand{\skipcom}{\texttt{skip}}
 \newcommand{\onestep}[1]{\rightarrow_{#1}}
+\newcommand{\bigstep}[1]{\rightarrow_{#1}}
 \newcommand{\com}{C}
 \newcommand{\bool}{B}
+\newcommand{\imp}{\textsc{Imp}\xspace}
+\newcommand{\opal}{$\textsc{Opa}\lambda$\xspace}
+
+% thanks to https://tex.stackexchange.com/a/132790
+\def\checkmark{\tikz\fill[scale=0.4](0,.35) -- (.25,0) -- (1,.7) -- (.25,.15) -- cycle;}
 
 \begin{document}
 
@@ -27,182 +43,144 @@
 
 \section{Description}
 
-Tiny turing-incomplete language based on IMP with sets:
+Tiny turing-incomplete language based on \imp with sexps:
 
 \section{Grammar}
 
 \begin{grammar}
-<Var> ::= Any identifier
+<Com> ::= \skipcom
+\alt \seqcom{\synt{Com}}{\synt{Com}}
+\alt \ifcom{\synt{Bool}}{\synt{Com}}{\synt{Com}}
+\alt \withcom{\synt{Node}}{\synt{Com}}
+\alt \hypcom{\synt{World}}{\synt{Com}}
+\alt \commitcom{\synt{World}}
+\alt \handlecom{\synt{Node}}{\synt{Var}}{\synt{Op}}{\synt{Sexp}}{\synt{Sexp}}{\synt{Com}}
 
-<SExp> ::= $\varnothing$
-\alt <Var>
-\alt ( <SExp> . <SExp> )
+<Sexp> ::= $\varnothing$
+\alt <Node>.<Var>
+\alt ( <Sexp> . <Sexp> )
 
-<Bool> ::= <SExp> = <SExp>
-\alt <SExp> $\in$ <SExp>
+<Bool> ::= <Sexp> = <Sexp>
+\alt <Sexp> $\in$ <Sexp>
 \alt <Bool> $\land$ <Bool>
 \alt <Bool> $\lor$ <Bool>
 \alt \true
 \alt \false
 
-<Com> ::= \skipcom
-\alt \ifstmt{\synt{Bool}}{\synt{Com}}{\synt{Com}}
-\alt <Var> := <SExp>
-\alt <Com> ; <Com>
+\end{grammar}
 
+\subsection{Values}
+
+\begin{grammar}
+<SexpValue> ::= $\varnothing$
+\alt ( <SexpValue> . <SexpValue> )
+
+<BoolValue> ::= \true
+\alt \false
 \end{grammar}
 
 \section{Small Step Semantics}
-\begin{center}
-\begin{tabular}{c c c}
-$\textsc{Env}$  & :  & $\synt{Var} \rightarrow \synt{SExp}$ \\
-$\onestep\bool$  & :  & $(\synt{Bool} \times \textsc{Env}) \rightarrow \synt{Bool}$ \\
-$\onestep\com$  & :  & $(\synt{Com} \times \textsc{Env}) \rightarrow (\synt{Com}, \textsc{Env})$ \\
+\subsection{Terminology}
+
+\begin{tabular}{l c p{6.4cm}}
+$\sigma$ : & $\synt{Node} \times \synt{Var} \partialfunc \synt{SexpValue}$ & function representing each node's store \\\\
+$\Sigma$ : & $\bigcdot \ \ |\ \ (\sigma, \Sigma)$ & stack of stores (for \textsc{Hyp} and \textsc{At}) \\\\
+$\omega$ : & $\synt{World} \partialfunc (\Sigma \times \sigma)$ & function representing each world's initial stack and final store \\\\
+$\pi$ : & $2^{\synt{Node}}$ & current authorized set of principals \\\\
+$\rho$ : & $\synt{Node}$ & current execution location \\\\
+$\eta$ : & $\synt{Op} \partialfunc (\synt{Node} \times \synt{Var} \times \synt{Sexp})$ & mapping of handlers to their destinations and expressions \\\\
+$\mu$ : & $(\synt{Node} \times \synt{Var}) \partialfunc \synt{Sexp}$ & mapping of handler results to their merge expressions \\\\
+$\Downarrow_{\synt{Com}}$ : & $(\synt{Com} \times \Sigma \times \omega \times \pi \times \rho \times \eta \times \mu) \partialfunc (\sigma \times \omega)$  & Commands step to a new top-level store and new set of hypothetical worlds\\\\
+$\Downarrow_{\synt{Sexp}}$ : & $(\synt{Sexp} \times \Sigma \times \pi) \partialfunc \synt{SexpValue}$ & Sexps step to a value, or nothing if it cannot be evaluated due to undefined variables or lack of permission \\\\
+$\Downarrow_{\synt{Bool}}$ : & $(\synt{Bool} \times \Sigma \times \pi) \partialfunc \synt{BoolValue}$ & Bools step to a value, or nothing if it cannot be evaluated due to undefined variables or lack of permission \\\\
 \end{tabular}
-\end{center}
 
-\subsection{Boolean Relation}
-
-\todo[inline]{Should we ``typecheck'' at the evaluation stage? i.e. should we make sure that all sets are 100\% evaluable even if we can determine truth without it?}
-
-\subsubsection{Equality}
-
-\begin{prooftree}
-\AxiomC{$\sigma(v) = s_1$}
-\RightLabel{\textsc{Eq-VarL}}
-\UnaryInfC{$\config{v = s_2}{\sigma} \onestep\bool s_1 = s_2$}
-\end{prooftree}
-
-\begin{prooftree}
-\AxiomC{$\sigma(v) = s_2$}
-\RightLabel{\textsc{Eq-VarR}}
-\UnaryInfC{$\config{s_1 = v}{\sigma} \onestep\bool s_1 = s_2$}
-\end{prooftree}
-
+\subsection{Basic commands}
 \begin{prooftree}
 \AxiomC{}
-\RightLabel{\textsc{Eq-Empty}}
-\UnaryInfC{$\config{\varnothing = \varnothing}{\sigma} \onestep\bool \true$}
+\RightLabel{$\textsc{Skip}$}
+\UnaryInfC{$\config{\skipcom, (\sigma, \Sigma), \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma, \omega}$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{}
-\RightLabel{\textsc{Eq-NotL}}
-\UnaryInfC{$\config{(s_1 . s_2) = \varnothing}{\sigma} \onestep\bool \false$}
+\AxiomC{$\config{c_1, (\sigma, \Sigma), \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma', \omega'}$}
+\AxiomC{$\config{c_2, (\sigma', \Sigma), \omega', \pi, \rho, \eta, \mu} \Downarrow \config{\sigma'', \omega''}$}
+\RightLabel{$\textsc{Seq}$}
+\BinaryInfC{$\config{\seqcom{c_1}{c_2}, (\sigma, \Sigma), \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma'', \omega''}$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{}
-\RightLabel{\textsc{Eq-NotR}}
-\UnaryInfC{$\config{\varnothing = (s_3 . s_4)}{\sigma} \onestep\bool \false$}
+\AxiomC{$\config{b, \Sigma, \pi} \Downarrow \true$}
+\AxiomC{$\config{c_1, \Sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma', \omega'}$}
+\RightLabel{$\textsc{If-True}$}
+\BinaryInfC{$\config{\ifcom{b}{c_1}{c_2}, \Sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma', \omega'}$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{}
-\RightLabel{\textsc{Eq-Prop}}
-\UnaryInfC{$\config{(s_1 . s_2) = (s_1' . s_2')}{\sigma} \onestep\bool (s_1 = s_1') \land (s_2 = s_2')$}
+\AxiomC{$\config{b, \Sigma, \pi} \Downarrow \false$}
+\AxiomC{$\config{c_2, \Sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma', \omega'}$}
+\RightLabel{$\textsc{If-False}$}
+\BinaryInfC{$\config{\ifcom{b}{c_1}{c_2}, \Sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma', \omega'}$}
 \end{prooftree}
 
-\subsubsection{Membership}
+\subsection{Distribution commands}
+In this semantics, \textsc{At} is effectively a noop/passthrough, resulting in behavior that would be identical with or without it (modulo endorsement taking location into account). It does have real-world semantics though: \textsc{At} represents executing a command on another computer, starting with a new empty store on the top of the stack, and shipping back the new store at the end. Beyond this, exact semantics are implementation dependent. An implementation could, in theory, send the entire stack of stores over in addition to just the command. Alternatively, the new machine could request any specific variables it needs, to mitigate the amount of data shuttled over the network.
+
+
+\textsc{With} is also a passthrough in a similar regard: its runtime effects consist of asking the specified user for permission to run the specified command on the current machine (represented by $\config{n, \rho, c}\ \checkmark$ in the semantics -- the details of this function are implementation dependent).
 
 \begin{prooftree}
-\AxiomC{$\sigma(v) = s_2$}
-\RightLabel{\textsc{Mem-Var}}
-\UnaryInfC{$\config{s_1 \in v}{\sigma} \onestep\bool s_1 \in s_2$}
-\end{prooftree}
-
-\begin{prooftree}
-\AxiomC{}
-\RightLabel{\textsc{Mem-Empty}}
-\UnaryInfC{$\config{s \in \varnothing}{\sigma} \onestep\bool \false$}
-\end{prooftree}
-
-\begin{prooftree}
-\AxiomC{}
-\RightLabel{\textsc{Mem-Check}}
-\UnaryInfC{$\config{s_1 \in (s_1' . s_2)}{\sigma} \onestep\bool (s_1 = s_1' \lor s_1 \in s_2)$}
-\end{prooftree}
-
-\subsubsection{Conjunction}
-\begin{prooftree}
-\AxiomC{$\config{b_1}{\sigma} \onestep\bool b_1'$}
-\RightLabel{\textsc{Conj-Prop}}
-\UnaryInfC{$\config{b_1 \land b_2}{\sigma} \onestep\bool b_1' \land b_2$}
+\AxiomC{$\config{c, (\sigma_\varnothing, (\sigma, \Sigma)), \omega, \pi, n, \eta, \mu} \Downarrow \config{\sigma', \omega'}$}
+\RightLabel{$\textsc{At}$}
+\UnaryInfC{$\config{\atcom{n}{c}, (\sigma, \Sigma), \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma';\sigma, \omega'}$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{}
-\RightLabel{\textsc{Conj-True}}
-\UnaryInfC{$\config{\true \land b_2}{\sigma} \onestep\bool b_2$}
+\AxiomC{$\config{n, \rho, c}\ \checkmark$}
+\AxiomC{$\config{c, \Sigma, \omega, \pi \cup \{n\}, \rho, \eta, \mu} \Downarrow \config{\sigma', \omega'}$}
+\RightLabel{$\textsc{With}$}
+\BinaryInfC{$\config{\atcom{n}{c}, \Sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma', \omega'}$}
+\end{prooftree}
+
+\subsection{Handler commands}
+We describe handlers as a tuple of $(\synt{Node}, \synt{Var}, \synt{Op}, \synt{Sexp}_h, \synt{Sexp}_m, \synt{Com})$, where $\synt{Node}$ is the node to write results to, $\synt{Var}$ is the variable on that node to write results to, $\synt{Op}$ is the name of the handler, $\synt{Sexp}_h$ is a sexp that gets lazily evaluated with its results written to $\synt{Node}.\synt{Var}$ each time $\synt{Op}$ is called, and $\synt{Sexp}_m$ is a sexp that gets lazily evaluated upon merge conflicts within a variable upon \texttt{commit}ing a hypothetical world, with $\varnothing.\textsc{Orig}$ set to the original value of the variable before the hypothetical execution, $\varnothing.\textsc{Hyp}$ set to the value of the variable after the hypothetical execution, and $\varnothing.\textsc{Curr}$ set to the value of the variable in the context of where $\texttt{commit}$ is being called.
+
+\begin{prooftree}
+\AxiomC{$\config{c, \Sigma, \omega, \pi, \rho, \eta[op \mapsto (n, v, s_h)], \mu[(n, v) \mapsto s_m]} \Downarrow \config{\sigma', \omega'}$}
+\RightLabel{$\textsc{Handle}$}
+\UnaryInfC{$\config{\handlecom{n}{v}{op}{s_h}{s_m}{c}, \Sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma', \omega'}$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{}
-\RightLabel{\textsc{Conj-False}}
-\UnaryInfC{$\config{\false \land b_2}{\sigma} \onestep\bool \false$}
+\AxiomC{$\eta(op) = (n, v, s_h)$}
+\AxiomC{$\config{s_h, \Sigma, \pi} \Downarrow s$}
+\AxiomC{$n \in \pi$}
+\RightLabel{$\textsc{Op}$}
+\TrinaryInfC{$\config{\opcom{op}, \Sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma[(n, v) \mapsto s], \omega}$}
 \end{prooftree}
 
-\subsubsection{Disjunction}
-\begin{prooftree}
-\AxiomC{$\config{b_1}{\sigma} \onestep\bool b_1'$}
-\RightLabel{\textsc{Disj-Prop}}
-\UnaryInfC{$\config{b_1 \lor b_2}{\sigma} \onestep\bool b_1' \lor b_2$}
-\end{prooftree}
+\subsection{Hypothetical commands}
 
 \begin{prooftree}
-\AxiomC{}
-\RightLabel{\textsc{Disj-True}}
-\UnaryInfC{$\config{\true \lor b_2}{\sigma} \onestep\bool \true$}
+\AxiomC{$\config{c, (\sigma_\varnothing, \Sigma), \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma, \omega'}$}
+\RightLabel{$\textsc{Hyp}$}
+\UnaryInfC{$\config{\hypcom{u}{c}, \Sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma, \omega[u \mapsto (\Sigma, \sigma)]}$}
 \end{prooftree}
+
+% proof that commits outside of "with" don't give any additional power that you shouldn't have
+% proof of that is the fact that it's in a store in the first place
+
+% poof idea: hyp movement to commit + hyp noninterference
+
+% separate idea: mutually distrustful users that will only disclose if they both agree: 2-deep hyp execution (hyp without "with" internally)
 
 \begin{prooftree}
-\AxiomC{}
-\RightLabel{\textsc{Disj-False}}
-\UnaryInfC{$\config{\false \lor b_2}{\sigma} \onestep\bool b_2$}
+\AxiomC{$\omega(u) = (\Sigma_{\texttt{orig}}, \sigma_{\texttt{hyp}})$}
+\AxiomC{$\forall (n, v, s) \in \sigma_{\texttt{hyp}}. \config{\mu((n, v)), \Sigma[], \pi} \Downarrow s_f \Rightarrow \sigma'((n, v)) = s_f$}
+\RightLabel{$\textsc{Commit}$}
+\BinaryInfC{$\config{\commitcom{u}, \Sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma', \omega}$}
 \end{prooftree}
 
-\subsection{Command Relation}
-\subsubsection{If}
-
-\begin{prooftree}
-\AxiomC{$\config{b}{\sigma} \onestep\bool b'$}
-\RightLabel{\textsc{If-Prop}}
-\UnaryInfC{$\config{\ifstmt{b}{c_1}{c_2}}{\sigma} \onestep\com \config{\ifstmt{b'}{c_1}{c_2}}{\sigma}$}
-\end{prooftree}
-
-\begin{prooftree}
-\AxiomC{}
-\RightLabel{\textsc{If-True}}
-\UnaryInfC{$\config{\ifstmt{\true}{c_1}{c_2}}{\sigma} \onestep\com \config{c_1}{\sigma}$}
-\end{prooftree}
-
-\begin{prooftree}
-\AxiomC{}
-\RightLabel{\textsc{If-False}}
-\UnaryInfC{$\config{\ifstmt{\false}{c_1}{c_2}}{\sigma} \onestep\com \config{c_2}{\sigma}$}
-\end{prooftree}
-
-\subsubsection{Sequence}
-
-\begin{prooftree}
-\AxiomC{$\config{c_1}{\sigma} \onestep\com \config{c_1'}{\sigma'}$}
-\RightLabel{\textsc{Seq-Prop}}
-\UnaryInfC{$\config{c_1; c_2}{\sigma} \onestep\com \config{c_1'; c_2}{\sigma'}$}
-\end{prooftree}
-
-\begin{prooftree}
-\AxiomC{}
-\RightLabel{\textsc{Seq-Skip}}
-\UnaryInfC{$\config{\skipcom; c_2}{\sigma} \onestep\com \config{c_2}{\sigma}$}
-\end{prooftree}
-
-\subsubsection{Assignment}
-
-\begin{prooftree}
-\AxiomC{}
-\RightLabel{\textsc{Assign}}
-\UnaryInfC{$\config{v := s}{\sigma} \onestep\com \config{\skipcom}{\sigma[v \mapsto s]}$}
-\end{prooftree}
 
 \end{document}
 
