@@ -33,7 +33,7 @@ com:  SKIP                               { Skip }
     | HANDLE STR DOT STR ASSIGN STR
              WITH sexp MERGE sexp IN com { Handle ($2, $4, $6, $8, $10, $12) }
     | STR                                { Op $1 }
-    | STR DOT STR ASSIGN sexp            { Handle ($1, $3, "%tmp", $5, EmptySet, Op "%tmp" ) }
+    | STR DOT STR ASSIGN sexp            { Handle ($1, $3, "__tmp", $5, EmptySet, Op "__tmp" ) }
 
 bool: TRUE               { True }
     | FALSE              { False }
