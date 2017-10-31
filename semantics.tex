@@ -52,9 +52,11 @@ Tiny turing-incomplete language based on \imp with sexps:
 \alt \seqcom{\synt{Com}}{\synt{Com}}
 \alt \ifcom{\synt{Bool}}{\synt{Com}}{\synt{Com}}
 \alt \withcom{\synt{Node}}{\synt{Com}}
+\alt \atcom{\synt{Node}}{\synt{Com}}
 \alt \hypcom{\synt{World}}{\synt{Com}}
 \alt \commitcom{\synt{World}}
 \alt \handlecom{\synt{Node}}{\synt{Var}}{\synt{Op}}{\synt{Sexp}}{\synt{Sexp}}{\synt{Com}}
+\alt <Op>
 
 <Sexp> ::= $\varnothing$
 \alt <Node>.<Var>
@@ -162,9 +164,9 @@ We describe handlers as a tuple of $(\synt{Node}, \synt{Var}, \synt{Op}, \synt{S
 \subsection{Hypothetical commands}
 
 \begin{prooftree}
-\AxiomC{$\config{c, (\sigma_\varnothing, \Sigma), \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma, \omega'}$}
+\AxiomC{$\config{c, (\sigma_\varnothing, \Sigma), \omega_\varnothing, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma', \omega'}$}
 \RightLabel{$\textsc{Hyp}$}
-\UnaryInfC{$\config{\hypcom{u}{c}, \Sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma, \omega[u \mapsto (\Sigma, \sigma)]}$}
+\UnaryInfC{$\config{\hypcom{u}{c}, \Sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\dots, \omega[u \mapsto (\Sigma, \sigma)]}$}
 \end{prooftree}
 
 % proof that commits outside of "with" don't give any additional power that you shouldn't have
