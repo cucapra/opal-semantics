@@ -14,11 +14,11 @@
 
 %start com
 
+%right SEMICOLON
 %right DOT
 %right WITH AT HYP ELSE STR IN
 %right OR
 %right AND
-%right SEMICOLON
 
 %%
 
