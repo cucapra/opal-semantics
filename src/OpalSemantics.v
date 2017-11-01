@@ -23,6 +23,18 @@ Inductive sexp_is_value : sexp -> Prop :=
     sexp_is_value s1 -> sexp_is_value s2 -> sexp_is_value (Cons s1 s2).
 Hint Constructors sexp_is_value.
 
+Definition is_sexp_value : forall s, {sexp_is_value s} + {~sexp_is_value s}.
+Proof.
+  induction s.
+  * left. auto.
+  * right. unfold not. intros. inversion H.
+  * destruct IHs1; destruct IHs2.
+    - auto.
+    - right. unfold not. intros. inversion H. contradiction H3.
+    - right. unfold not. intros. inversion H. contradiction H2.
+    - right. unfold not. intros. inversion H. contradiction H2.
+Qed.
+
 Definition sexp_value := {sexp | sexp_is_value sexp}.
 
 Inductive bool :=
@@ -206,14 +218,14 @@ Definition set_merger (m: mergers) (n: node) (v: var) (s: sexp) : mergers :=
     | _ => m n' v'
     end.
 
-Program Fixpoint sexp_step (s: sexp) (Sigma: var_store_stack) (pi: principals)
+Fixpoint sexp_step (s: sexp) (Sigma: var_store_stack) (pi: principals)
   : (sexp_value + error) :=
   match s with
-  | EmptySet => inl EmptySet
+  | EmptySet => inl (exist sexp_is_value EmptySet EmptySetIsValue)
   | Cons l r =>
     match (sexp_step l Sigma pi), (sexp_step r Sigma pi) with
-    | inl lv, inl rv =>
-      inl (Cons lv rv)
+    | inl (exist _ lv Hl), inl (exist _ rv Hr) =>
+      inl (exist _ (Cons lv rv) (ConsValuesIsValue Hl Hr))
     | inr err, _ => inr err
     | _, inr err => inr err
     end
@@ -223,9 +235,78 @@ Program Fixpoint sexp_step (s: sexp) (Sigma: var_store_stack) (pi: principals)
     | false => inr (ReadPermErr n v pi)
     end
   end.
-Next Obligation.
-eapply ConsValuesIsValue; destruct (_: sexp_value); auto.
-Defined.
+
+Lemma canonical_sexp_value :
+  forall v Sigma pi H,
+    sexp_step v Sigma pi = inl (exist sexp_is_value v H).
+Proof.
+  induction v ; intros.
+  * specialize proof_irrelevance with (sexp_is_value EmptySet) EmptySetIsValue H.
+    crush.
+  * inversion H.
+  * inversion H.
+    specialize IHv1 with Sigma pi H2.
+    specialize IHv2 with Sigma pi H3.
+    specialize proof_irrelevance with (sexp_is_value (Cons v1 v2))
+                                      (ConsValuesIsValue H2 H3) H.
+    crush.
+Qed.
+
+Lemma canonical_sexp_cons :
+  forall v l r Sigma pi H,
+  sexp_is_value v ->
+  sexp_step v Sigma pi = inl (exist sexp_is_value (Cons l r) H) ->
+  v = (Cons l r).
+Proof.
+  intros.
+  induction v.
+  * unfold sexp_step in H0.
+    fold sexp_step in H0.
+    destruct (sexp_step l Sigma pi).
+  - destruct s.
+    destruct (sexp_step r Sigma pi).
+    + destruct s0. crush.
+    + discriminate.
+  - discriminate.
+  * inversion H0.
+  * inversion H0.
+    specialize canonical_sexp_value with v1 Sigma pi H4.
+    specialize canonical_sexp_value with v2 Sigma pi H5.
+    intros.
+    subst.
+    unfold sexp_step in H1.
+    fold sexp_step in H1.
+    destruct (sexp_step v1 Sigma pi) ;
+      destruct (sexp_step v2 Sigma pi) ;
+      try (destruct s;
+           destruct s0);
+      crush.
+Qed.
+
+
+
+Lemma canonical_sexp_value_2 :
+  forall v v' Sigma pi H,
+    sexp_is_value v ->
+    sexp_step v Sigma pi = inl (exist sexp_is_value v' H) ->
+    v = v'.
+Proof.
+  induction v ; intros.
+  * crush.
+  * inversion H0.
+  * inversion H0.
+    subst.
+    inversion H1.
+    destruct (sexp_step v1 Sigma pi) eqn:?.
+    - destruct s.
+      destruct (sexp_step v2 Sigma pi) eqn:?.
+      + destruct s0.
+        specialize IHv1 with x Sigma pi s.
+        specialize IHv2 with x0 Sigma pi s0.
+        crush.
+      + crush.
+    - crush.
+Qed.
 
 Inductive bool_lt : bool -> bool -> Prop :=
 | ValueLt : forall b1 b2,
@@ -615,63 +696,296 @@ Definition bool_step : forall (Sigma: var_store_stack)
           (fun (b: bool)
                (bool_step : forall y : bool, bool_lt_trans y b -> (bool_value + error)) =>
              match b as b' return b = b' -> (bool_value + error) with
-             | True => fun _ => inl (exist _ True _)
-             | False => fun _ => inl (exist _ False _)
+             | True => fun _ => inl (exist _ True TrueIsValue)
+             | False => fun _ => inl (exist _ False FalseIsValue)
              | Conj l r =>
                fun _ =>
-               match (bool_step l _), (bool_step r _) with
-               | inl (exist _ True _), inl (exist _ True _) =>
-                 inl (exist _ True _)
-               | inl _, inl _ => inl (exist _ False _)
-               | inr err, _ => inr err
-               | _, inr err => inr err
-               end
+                 match bool_step l _ as linner, bool_step r _ as rinner
+                       return (bool_step l _) = linner ->
+                              (bool_step r _) = rinner ->
+                              (bool_value + error)
+                 with
+                 | inl lv, inl rv =>
+                   fun _ _ =>
+                     match (proj1_sig lv) as lv', (proj1_sig rv) as rv'
+                           return (proj1_sig lv)=lv' ->
+                                  (proj1_sig rv)=rv' ->
+                                  (bool_value + error)
+                     with
+                     | True, True =>
+                       fun _ _ => inl (exist _ True _)
+                     | False, _ =>
+                       fun _ _ => inl (exist _ False _)
+                     | _, False =>
+                       fun _ _ => inl (exist _ False _)
+                     | _, _ =>
+                       fun _ _ => inr (BoolEvalErr b)
+                     end eq_refl eq_refl
+                 | inr err, _ =>
+                   fun _ _ => inr err
+                 | _, inr err =>
+                   fun _ _ => inr err
+                 end eq_refl eq_refl
              | Disj l r =>
                fun _ =>
-               match (bool_step l _), (bool_step r _) with
-               | inl (exist _ False _), inl (exist _ False _) =>
-                 inl (exist _ False _)
-               | inl _, inl _ => inl (exist _ True _)
-               | inr err, _ => inr err
-               | _, inr err => inr err
-               end
+                 match bool_step l _ as linner, bool_step r _ as rinner
+                       return (bool_step l _) = linner ->
+                              (bool_step r _) = rinner ->
+                              (bool_value + error)
+                 with
+                 | inl lv, inl rv =>
+                   fun _ _ =>
+                     match (proj1_sig lv) as lv', (proj1_sig rv) as rv'
+                           return (proj1_sig lv)=lv' ->
+                                  (proj1_sig rv)=rv' ->
+                                  (bool_value + error)
+                     with
+                     | False, False =>
+                       fun _ _ => inl (exist _ False _)
+                     | True, _ =>
+                       fun _ _ => inl (exist _ True _)
+                     | _, True =>
+                       fun _ _ => inl (exist _ True _)
+                     | _, _ =>
+                       fun _ _ => inr (BoolEvalErr b)
+                     end eq_refl eq_refl
+                 | inr err, _ =>
+                   fun _ _ => inr err
+                 | _, inr err =>
+                   fun _ _ => inr err
+                 end eq_refl eq_refl
              | Eq l r =>
                fun _ =>
-                 let lv := (sexp_step l Sigma pi) in
-                 let rv := (sexp_step r Sigma pi) in
-                 match lv as lv', rv as rv'
-                       return lv=lv' -> rv=rv' -> (bool_value + error)
+                 match (sexp_step l Sigma pi) as lv', (sexp_step r Sigma pi) as rv'
+                       return (sexp_step l Sigma pi)=lv' ->
+                              (sexp_step r Sigma pi)=rv' ->
+                              (bool_value + error)
                  with
-               | inl (exist _ (Cons ll lr) _),
-                 inl (exist _ (Cons rl rr) _) =>
-                 fun _ _ =>
-                 let lb := Eq ll rl in
-                 let rb := Eq lr rr in
-                 bool_step (Conj lb rb) _
-               | inl _, inl _ =>
-                 fun _ _ => inl (exist _ False _)
-               | inr err, _ =>
-                 fun _ _ => inr err
-               | _, inr err =>
-                 fun _ _ => inr err
+                 | inl (exist _ linner _),
+                   inl (exist _ rinner _) =>
+                   fun _ _ =>
+                     match linner as linner',
+                                     rinner as rinner'
+                           return linner=linner' ->
+                                  rinner=rinner' ->
+                                  (bool_value + error) with
+                     | (Cons ll lr), (Cons rl rr) =>
+                       fun _ _ =>
+                         bool_step (Conj (Eq ll rl) (Eq lr rr)) _
+                     | _, _ =>
+                       fun _ _ => inl (exist _ False _)
+                     end eq_refl eq_refl
+                 | inr err, _ =>
+                   fun _ _ => inr err
+                 | _, inr err =>
+                   fun _ _ => inr err
                  end eq_refl eq_refl
              | Mem l r =>
                fun _ =>
-               match (sexp_step l Sigma pi),
-                     (sexp_step r Sigma pi) with
-               | inl (exist _ lv _),
-                 inl (exist _ (Cons rl rr) _) =>
-                 let lb := Eq lv rl in
-                 let rb := Mem lv rr in
-                 bool_step (Disj lb rb) _
-               | inl _, inl _ => inl (exist _ False _)
-               | inr err, _ => inr err
-               | _, inr err => inr err
-               end
+                 match (sexp_step l Sigma pi) as lv', (sexp_step r Sigma pi) as rv'
+                       return (sexp_step l Sigma pi)=lv' ->
+                              (sexp_step r Sigma pi)=rv' ->
+                              (bool_value + error)
+                 with
+                 | inl (exist _ linner _),
+                   inl (exist _ rinner _) =>
+                   fun _ _ =>
+                     match linner as linner', rinner as rinner'
+                           return linner = linner' ->
+                                  rinner = rinner' ->
+                                  (bool_value + error) with
+                     | lv, Cons rl rr =>
+                       fun _ _ =>
+                         bool_step (Disj (Eq lv rl) (Mem lv rr)) _
+                     | _, _ =>
+                       fun _ _ =>
+                         inl (exist _ False _)
+                     end eq_refl eq_refl
+                 | inr err, _ =>
+                   fun _ _ => inr err
+                 | _, inr err =>
+                   fun _ _ => inr err
+                 end eq_refl eq_refl
              end eq_refl)) ; auto.
-  *
+  Unshelve.
+  * subst. intuition.
+    assert (sexp_is_value (Cons ll lr)). auto.
+    assert (sexp_is_value (Cons rl rr)). auto.
+    destruct l ; destruct r ; try discriminate.
+  - unfold sexp_step in e0 ; try discriminate.
+    assert (~sexp_is_value (Var n v)). unfold not. intros. inversion H1.
+      eapply t_trans with (Eq (Cons ll lr) (Cons rl rr)).
+      inversion s0. inversion s2.
+      + constructor. eapply EqLt ; auto.
+      + eapply t_trans with (Eq (Cons ll lr) (Var n0 v0)) ; constructor.
+        ** eapply SexpValueLtEqR; auto.
+           unfold not. intros. inversion H2.
+        ** eapply SexpValueLtEqL; auto.
+    - subst.
+      eapply t_trans with (Eq (Cons ll lr) (Cons rl rr)) ;
+      destruct (is_sexp_value (Cons r1 r2)).
+      + constructor.
+        inversion H. inversion H0.
+        eapply EqLt; auto.
+      + constructor.
+        inversion H. inversion H0.
+        eapply EqLt; auto.
+      + specialize canonical_sexp_value with (Cons r1 r2) Sigma pi s3.
+        intros.
+        rewrite H1 in e1.
+        assert ((Cons rl rr) = (Cons r1 r2)). injection e1. intros. crush.
+        constructor.
+        rewrite H2.
+        eapply SexpValueLtEqL; auto.
+        unfold not. intros. inversion H3.
+      + eapply t_trans with (Eq (Cons ll lr) (Cons r1 r2)).
+        ** constructor. eapply SexpValueLtEqR; auto.
+        **constructor. eapply SexpValueLtEqL; auto.
+          unfold not. intros. inversion H1.
+    - unfold sexp_step in e0 ; try discriminate.
+      fold sexp_step in e0.
+      eapply t_trans with (Eq (Cons ll lr) (Cons rl rr)) ;
+      destruct (is_sexp_value (Cons l1 l2)).
+      + constructor.
+        inversion H. inversion H0.
+        eapply EqLt; auto.
+      + constructor.
+        inversion H. inversion H0.
+        eapply EqLt; auto.
+      + specialize canonical_sexp_value with (Cons l1 l2) Sigma pi s3.
+        inversion s3.
+        specialize canonical_sexp_value with l1 Sigma pi H3.
+        specialize canonical_sexp_value with l2 Sigma pi H4.
+        intros.
+        destruct (sexp_step l1 Sigma pi).
+        ** destruct s6.
+           destruct (sexp_step l2 Sigma pi).
+           -- destruct s7.
+              subst.
+              assert ((Cons ll lr) = (Cons l1 l2)).
+              crush.
+              rewrite H1.
+              constructor.
+              eapply SexpValueLtEqR; auto.
+              unfold not. intros. inversion H2.
+           -- discriminate.
+              ** discriminate.
+      + eapply t_trans with (Eq (Cons l1 l2) (Cons rl rr)).
+        ** constructor. eapply SexpValueLtEqL; auto.
+        **constructor. eapply SexpValueLtEqR; auto.
+          unfold not. intros. inversion H1.
+    - inversion H. inversion H0. subst.
+      destruct (is_sexp_value (Cons l1 l2));
+        destruct (is_sexp_value (Cons r1 r2)).
+      + specialize canonical_sexp_value with (Cons l1 l2) Sigma pi s3.
+        specialize canonical_sexp_value with (Cons r1 r2) Sigma pi s4.
+        intros.
+        rewrite H2 in e0.
+        rewrite H1 in e1.
+        injection e0.
+        injection e1.
+        intros.
+        constructor.
+        rewrite H5.
+        rewrite H6.
+        rewrite H9.
+        rewrite H10.
+        eapply EqLt; auto.
+      + eapply t_trans with (Eq (Cons ll lr) (Cons rl rr)).
+        constructor. eapply EqLt; auto.
+        specialize canonical_sexp_value with (Cons l1 l2) Sigma pi s3.
+        intros.
+        rewrite H1 in e0.
+        injection e0.
+        intros.
+        rewrite H2. rewrite H5.
+        constructor.
+        eapply SexpValueLtEqR; auto.
+      + eapply t_trans with (Eq (Cons ll lr) (Cons rl rr)).
+        constructor. eapply EqLt; auto.
+        specialize canonical_sexp_value with (Cons r1 r2) Sigma pi s3.
+        intros.
+        rewrite H1 in e1.
+        injection e1.
+        intros.
+        rewrite H2. rewrite H5.
+        constructor.
+        eapply SexpValueLtEqL; auto.
+      + eapply t_trans with (Eq (Cons ll lr) (Cons rl rr)).
+        constructor. eapply EqLt; auto.
+        eapply t_trans with (Eq (Cons ll lr) (Cons r1 r2)).
+        constructor. eapply SexpValueLtEqR; auto.
+        constructor. eapply SexpValueLtEqL; auto.
+  * subst.
+    destruct (is_sexp_value l);
+      destruct (is_sexp_value r).
+    - specialize (@canonical_sexp_value_2 r (Cons rl rr) Sigma pi s2 s4 e1).
+      specialize (@canonical_sexp_value_2 l lv Sigma pi s0 s3 e0).
+      intros.
+      rewrite H, H0.
+      constructor.
+      inversion s2.
+      eapply MemLt; auto.
+    - eapply t_trans with (Mem lv (Cons rl rr)).
+      constructor.
+      inversion s2.
+      eapply MemLt; auto.
+      specialize (@canonical_sexp_value_2 l lv Sigma pi s0 s3 e0).
+      intros.
+      rewrite H.
+      constructor.
+      eapply SexpValueLtMemR; auto.
+    - specialize (@canonical_sexp_value_2 r (Cons rl rr) Sigma pi s2 s3 e1).
+      intros.
+      rewrite H.
+      eapply t_trans with (Mem lv (Cons rl rr)).
+      constructor.
+      inversion s2.
+      eapply MemLt; auto.
+      constructor.
+      eapply SexpValueLtMemL; auto.
+    - eapply t_trans with (Mem lv (Cons rl rr)).
+      constructor.
+      inversion s2.
+      eapply MemLt; auto.
+      eapply t_trans with (Mem l (Cons rl rr)).
+      constructor.
+      eapply SexpValueLtMemL; auto.
+      constructor.
+      eapply SexpValueLtMemR; auto.
 
-Defined.
+      * constructor.
+        subst.
+        solve [ eapply ConjLtR
+              | eapply DisjLtR
+              | eapply ConjLtL
+              | eapply DisjLtL
+              ].
+
+      * constructor.
+        subst.
+        solve [ eapply ConjLtR
+              | eapply DisjLtR
+              | eapply ConjLtL
+              | eapply DisjLtL
+              ].
+
+      * constructor.
+        subst.
+        solve [ eapply ConjLtR
+              | eapply DisjLtR
+              | eapply ConjLtL
+              | eapply DisjLtL
+              ].
+
+      * constructor.
+        subst.
+        solve [ eapply ConjLtR
+              | eapply DisjLtR
+              | eapply ConjLtL
+              | eapply DisjLtL
+              ].
+Qed.
 
 Definition merge_variable (Sig_o Sig_t: var_store_stack) (pi: principals) (mu: mergers) (key: node*var) (hval: sexp_value) (optsig: var_store + error)
   : (var_store + error) :=
