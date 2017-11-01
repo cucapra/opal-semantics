@@ -31,7 +31,7 @@
 
 (* Dependent list types presented in Chapter 9 *)
 
-Require Import Arith List CpdtTactics.
+Require Import Arith List Cpdt.CpdtTactics.
 
 Set Implicit Arguments.
 Set Asymmetric Patterns.
