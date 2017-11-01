@@ -20,6 +20,15 @@ Inductive sexp_is_value : sexp -> Prop :=
     sexp_is_value s1 -> sexp_is_value s2 -> sexp_is_value (Cons s1 s2).
 Hint Constructors sexp_is_value.
 
+Definition is_sexp_value (s: sexp) : {sexp_is_value s} + {not (sexp_is_value s)}.
+Proof.
+  induction s.
+  * left. auto.
+  * right. crush. inversion H.
+  * inversion IHs1 ; inversion IHs2 ; auto ;
+      right ; crush ; inversion H1 ;auto.
+Defined.
+
 Definition sexp_value := {sexp | sexp_is_value sexp}.
 
 Inductive bool :=
@@ -30,20 +39,6 @@ Inductive bool :=
 | True  : bool
 | False : bool.
 
-Inductive bool_is_psuedovalue : bool -> Prop :=
-| TruePsuedoValue : bool_is_psuedovalue True
-| FalsePsuedoValue : bool_is_psuedovalue False
-| MemPsuedoValue : forall l r, sexp_is_value l -> sexp_is_value r ->
-                               bool_is_psuedovalue (Mem l r)
-| EqPsuedoValue : forall l r, sexp_is_value l -> sexp_is_value r ->
-                              bool_is_psuedovalue (Eq l r)
-| ConjPsuedoValue : forall l r, bool_is_psuedovalue l -> bool_is_psuedovalue r ->
-                                bool_is_psuedovalue (Conj l r)
-| DisjPsuedoValue : forall l r, bool_is_psuedovalue l -> bool_is_psuedovalue r ->
-                                bool_is_psuedovalue (Disj l r).
-Hint Constructors bool_is_psuedovalue.
-
-Definition bool_psuedovalue := { b: bool | bool_is_psuedovalue b}.
 Definition bool_value := { b: bool | b = True \/ b = False}.
 
 Inductive com :=
@@ -199,114 +194,592 @@ Definition set_merger (m: mergers) (n: node) (v: var) (s: sexp) : mergers :=
     | _ => m n' v'
     end.
 
-Program Fixpoint sexp_step (s: sexp) (env: var_store_stack) (pi: principals) : option sexp_value :=
+Record state :=
+  mkState {
+      sigma : var_store ;
+      Sigma : var_store_stack ;
+      omega : world_store ;
+      pi : principals ;
+      rho : location ;
+      eta : handlers ;
+      mu : mergers
+    }.
+
+Definition error := string.
+
+Program Fixpoint sexp_step (s: sexp) (env: var_store_stack) (pi: principals) :
+  sexp_value + error :=
   match s with
-  | EmptySet => Some EmptySet
+  | EmptySet => inl EmptySet
   | Cons l r =>
     match sexp_step l env pi, sexp_step r env pi with
-    | Some lv, Some rv =>
-      Some (Cons lv rv)
-    | _, _ => None
+    | inl lv, inl rv =>
+      inl (Cons lv rv)
+    | inr e, _ => inr e
+    | _, inr e => inr e
     end
   | Var n v =>
     match set_mem string_dec n pi with
-    | true => lookup env n v
-    | false => None
+    | true =>
+      match lookup env n v with
+      | Some val => inl val
+      | None => inr (append "No value set for " n)
+      end
+    | false => inr (append "No permission to read " n)
     end
   end.
 Next Obligation.
 eapply ConsValuesIsValue; destruct (_: sexp_value); auto.
 Defined.
 
-Inductive bool_wf_rel : bool -> bool -> Prop :=
-| ConjWfL : forall (a b: bool), bool_wf_rel a (Conj a b)
-| ConjWfR : forall (a b: bool), bool_wf_rel b (Conj a b)
-| DisjWfL : forall (a b: bool), bool_wf_rel a (Disj a b)
-| DisjWfR : forall (a b: bool), bool_wf_rel b (Disj a b)
-| TrueWf : forall a, a <> True -> bool_wf_rel True a
-| FalseWf : forall a, a <> False -> bool_wf_rel False a
-| EqLtMem : forall elem elemv list env pi vl vr p1 p2,
-    sexp_step list env pi = Some (exist sexp_is_value (Cons vl vr) p1) ->
-    sexp_step elem env pi = Some (exist sexp_is_value elemv p2) ->
-    bool_wf_rel (Eq elemv vl) (Mem elem list)
-| MemLtMem : forall elem elemv list env pi vl vr p1 p2,
-    sexp_step list env pi = Some (exist sexp_is_value (Cons vl vr) p1) ->
-    sexp_step elem env pi = Some (exist sexp_is_value elemv p2) ->
-    bool_wf_rel (Mem elemv vr) (Mem elem list)
-| EqLtEqL : forall l r ll lr rl rr env pi p1 p2,
-    sexp_step l env pi = Some (exist sexp_is_value (Cons ll lr) p1) ->
-    sexp_step r env pi = Some (exist sexp_is_value (Cons rl rr) p2) ->
-    bool_wf_rel (Eq ll rl) (Eq l r)
-| EqLtEqR : forall l r ll lr rl rr env pi p1 p2,
-    sexp_step l env pi = Some (exist sexp_is_value (Cons ll lr) p1) ->
-    sexp_step r env pi = Some (exist sexp_is_value (Cons rl rr) p2) ->
-    bool_wf_rel (Eq lr rr) (Eq l r).
-Hint Constructors bool_wf_rel.
+Inductive bool_lt : bool -> bool -> Prop :=
+| TrueEq : forall l r, bool_lt True (Eq l r)
+| TrueMem : forall l r, bool_lt True (Mem l r)
+| TrueConj : forall l r, bool_lt True (Conj l r)
+| TrueDisj : forall l r, bool_lt True (Disj l r)
+| FalseEq : forall l r, bool_lt False (Eq l r)
+| FalseMem : forall l r, bool_lt False (Mem l r)
+| FalseConj : forall l r, bool_lt False (Conj l r)
+| FalseDisj : forall l r, bool_lt False (Disj l r)
+| EqL : forall ll lr rl rr,
+    bool_lt (Eq ll rl) (Eq (Cons ll lr) (Cons rl rr))
+| EqR : forall ll lr rl rr,
+    bool_lt (Eq lr rr) (Eq (Cons ll lr) (Cons rl rr))
+| EqVL : forall (l': sexp_value) l r,
+    ~ sexp_is_value l ->
+    bool_lt (Eq (proj1_sig l') r) (Eq l r)
+| EqVR : forall l (r': sexp_value) r,
+    ~ sexp_is_value r ->
+    bool_lt (Eq l (proj1_sig r')) (Eq l r)
+| MemL : forall l rl rr,
+    bool_lt (Eq l rl) (Mem l (Cons rl rr))
+| MemR : forall (l: sexp_value) rl rr,
+    bool_lt (Mem (proj1_sig l) rr) (Mem (proj1_sig l) (Cons rl rr))
+| MemVL : forall (l': sexp_value) l r,
+    ~ sexp_is_value l ->
+    bool_lt (Mem (proj1_sig l') r) (Mem l r)
+| MemVR : forall l (r': sexp_value) r,
+    ~ sexp_is_value r ->
+    bool_lt (Mem l (proj1_sig r')) (Mem l r)
+| ConjL : forall l r, bool_lt l (Conj l r)
+| ConjR : forall l r, bool_lt r (Conj l r)
+| DisjL : forall l r, bool_lt l (Disj l r)
+| DisjR : forall l r, bool_lt r (Disj l r).
 
-Fixpoint measure_sexp_value (s: sexp) :=
-  match s with
-  | EmptySet => 1
-  | Var _ _ => 1
-  | Cons l r =>
-    measure_sexp_value l +
-    measure_sexp_value r
-  end.
-
-Theorem measure_sexp_value_positive : forall s, measure_sexp_value s > 0.
+Theorem acc_true : Acc bool_lt True.
 Proof.
-  induction s; crush.
+  constructor. intros. inversion H.
 Qed.
 
-Fixpoint measure_bool_psuedovalue (b: bool) :=
-  match b with
-  | True => 0
-  | False => 0
-  | Conj l r => 1 + measure_bool_psuedovalue l + measure_bool_psuedovalue r
-  | Disj l r => 1 + measure_bool_psuedovalue l + measure_bool_psuedovalue r
-  | Mem l r => 1 + measure_sexp_value l + measure_sexp_value r
-  | Eq l r => 1 + measure_sexp_value l + measure_sexp_value r
-  end.
+Theorem acc_false : Acc bool_lt False.
+Proof.
+  constructor. intros. inversion H.
+Qed.
 
-Program Fixpoint bool_psuedovalue_step (b: bool_psuedovalue) (env: var_store_stack) (pi: principals) {measure (measure_bool_psuedovalue b)} : option bool_value :=
-  match b with
-  | True => Some True
-  | False => Some False
-  | Eq EmptySet EmptySet => Some True
-  | Eq (Cons ll lr) (Cons rl rr) =>
-    match bool_psuedovalue_step (Eq ll rl) env pi as leq,
-          bool_psuedovalue_step (Eq lr rr) env pi as req with
-    | (Some (exist _ True _)), (Some (exist _ True _)) => Some True
-    | Some _, Some _ => Some False
-    | _, _ => None
-    end
-  | Eq (Var _ _) _ => None
-  | Eq _ (Var _ _) => None
-  | Eq _ _ => Some False
-  | Mem (Var _ _) _ => None
-  | Mem _ (Var _ _) => None
-  | Mem _ EmptySet => Some False
-  | Mem l (Cons rl rr) =>
-    match bool_psuedovalue_step (Eq l rl) env pi as leq,
-          bool_psuedovalue_step (Mem l rr) env pi as rmem with
-    | (Some (exist _ False _)), (Some (exist _ False _)) => Some False
-    | Some _, Some _ => Some True
-    | _, _ => None
-    end
-  | Conj l r =>
-    match bool_psuedovalue_step l env pi as lv,
-          bool_psuedovalue_step l env pi as rv with
-    | (Some (exist _ True _)), (Some (exist _ True _)) => Some True
-    | Some _, Some _ => Some False
-    | _, _ => None
-    end
-  | Disj l r =>
-    match bool_psuedovalue_step l env pi as lv,
-          bool_psuedovalue_step l env pi as rv with
-    | Some (exist _ False _), Some (exist _ False _) => Some False
-    | Some _, Some _ => Some True
-    | _, _ => None
-    end
-  end.
+Theorem acc_prop :
+  forall ll lr rl rr,
+    Acc bool_lt (Eq ll rl) ->
+    Acc bool_lt (Eq lr rr) ->
+    Acc bool_lt (Eq (Cons ll lr) (Cons rl rr)).
+Admitted.
+(*
+Proof.
+  Hint Resolve acc_true acc_false.
+  intros.
+  constructor.
+  intros.
+  inversion H1; auto.
+Qed.
+*)
+
+Theorem acc_eq_v : forall l,
+    sexp_is_value l ->
+    forall r,
+    sexp_is_value r ->
+    Acc bool_lt (Eq l r).
+Admitted.
+(*
+Proof.
+  Hint Resolve acc_true acc_false.
+  induction l;
+    induction r;
+    constructor;
+    intros;
+    inversion H;
+    try (solve [
+             inversion H0 ; constructor ; intros ; inversion H4
+           | pose acc_prop ; eauto
+        ]).
+  * inversion H1; auto.
+  * inversion H1; auto.
+  * inversion H1; auto.
+  * inversion H. inversion H0.
+    inversion H1; auto.
+Qed.
+*)
+
+Theorem acc_eq : forall l r, Acc bool_lt (Eq l r).
+Admitted.
+(*
+Proof.
+  Hint Resolve acc_true acc_false.
+  induction l;
+    induction r;
+    constructor;
+    intros;
+    inversion H;
+    try (solve [
+             inversion H0 ; constructor ; intros ; inversion H4
+           | pose acc_prop ; eauto
+        ]).
+  * constructor ; intros ; inversion H1; auto.
+    subst.
+    destruct r.
+    destruct s; crush.
+  * constructor ; intros ; inversion H1; auto.
+    subst.
+    destruct l.
+    destruct s; crush.
+  * pose acc_eq_v. intros.
+    subst.
+    destruct l.
+    crush.
+    inversion s.
+  - crush. constructor. intros.
+    inversion H0 ; auto.
+    subst.
+    constructor.
+    intros.
+    inversion H ; auto.
+    subst.
+    inversion H1 ; auto.
+    subst.
+    destruct r.
+    destruct s0; crush.
+  - crush. constructor. intros.
+    inversion H2; auto. subst.
+    constructor. intros.
+    inversion H3; auto. subst.
+    + constructor. intros.
+      inversion H4; auto. subst.
+      ** inversion H0.
+         destruct r.
+         inversion s3; subst. inversion H8.
+         inversion H8. inversion H10. subst. inversion H5.
+         subst.
+         injection H14. intros.
+         eapply acc_eq_v; crush.
+      ** assert (sexp_is_value lr). inversion s. subst. inversion H11. auto.
+         assert (sexp_is_value rr0). destruct r. inversion s0. crush. subst.
+         inversion H8. subst. inversion H10. auto.
+         eapply acc_eq_v; crush.
+      ** eapply acc_eq_v.
+      -- destruct l. auto.
+      -- destruct r. inversion s0. crush. crush.
+      ** eapply acc_eq_v.
+      -- inversion s. auto.
+      -- destruct r0. inversion s0. crush. crush.
+    + eapply acc_eq_v.
+      inversion s. auto.
+      destruct r. inversion s0. crush. crush.
+    + eapply acc_eq_v.
+      inversion s. auto.
+      destruct r. inversion s0. crush. crush.
+  * constructor. intros.
+    inversion H1; auto.
+  - eapply acc_eq_v.
+    destruct l0. inversion s ; crush.
+    destruct r. inversion s ; crush.
+  - destruct r. destruct s. crush. crush.
+ * constructor. intros.
+   inversion H1 ; auto.
+   - subst.
+     inversion IHr1.
+     eapply H0.
+     destruct l.
+     inversion s; crush.
+     assert (ll = (proj1_sig (exist sexp_is_value ll H2))). auto.
+     rewrite H4.
+     eapply EqVL.
+   - subst.
+     inversion IHr2.
+     eapply H0.
+     destruct l.
+     inversion s; crush.
+     assert (lr = (proj1_sig (exist sexp_is_value lr H3))). auto.
+     rewrite H4.
+     eapply EqVL.
+   - destruct l. inversion s; crush.
+ * constructor. intros.
+   inversion H1 ; auto.
+   constructor. intros. inversion H6 ; auto.
+   destruct r0. inversion s; crush.
+Qed.
+*)
+
+Theorem acc_mem_v : forall l,
+    sexp_is_value l ->
+    forall r,
+    sexp_is_value r ->
+    Acc bool_lt (Mem l r).
+Admitted.
+(*
+Proof.
+  Hint Resolve acc_true acc_false acc_eq.
+  induction l;
+    induction r;
+    constructor;
+    intros;
+    inversion H;
+    try (solve [
+             inversion H0 ; constructor ; intros ; inversion H4
+           | pose acc_prop ; eauto
+        ]).
+  * inversion H1; auto.
+  * inversion H0.
+    inversion H1; auto.
+    rewrite H8.
+    eapply IHr2. auto.
+  * inversion H1; auto.
+  * inversion H. inversion H0.
+    inversion H1; auto.
+    subst.
+    rewrite H16.
+    eapply IHr2. auto.
+Qed.
+*)
+
+Theorem acc_mem : forall r l, Acc bool_lt (Mem l r).
+Admitted.
+(*
+Proof.
+  induction r;
+    constructor;
+    intros ;
+    inversion H ;
+    try solve [ constructor ; intros ; inversion H1
+              | inversion H2
+              | apply acc_eq
+              | crush].
+  * eapply acc_mem_v.
+    destruct l0. auto. eauto.
+  * subst.
+    constructor. intros.
+    inversion H0; auto.
+  - destruct l0. inversion s; crush.
+  - eapply acc_mem_v. destruct l0. crush. destruct r. crush.
+  * subst.
+    constructor.
+    intros.
+    inversion H0; auto.
+    - eapply acc_mem_v.
+      +destruct l0. inversion s; crush.
+      + destruct r. inversion s; crush.
+    - eapply acc_mem_v.
+      +destruct l0. inversion s; crush.
+      + destruct r. inversion s; crush.
+    - destruct r. inversion s; crush.
+  * crush.
+    constructor. intros.
+    inversion H0; auto.
+    destruct l0. inversion s; crush.
+Qed.
+*)
+
+Ltac prove_conj_disj l r y IHl1 IHl2 H2 :=
+  induction l ;
+    induction r ;
+    constructor ;
+    intros ;
+    inversion H ;
+    try (apply acc_eq) ;
+    try (apply acc_mem) ;
+    try (solve [constructor ; intros ; inversion H1]);
+    subst;
+    constructor;
+    intros ;
+    try (specialize IHl1 with y) ;
+    try (specialize IHl2 with y) ;
+    inversion H0 ;
+    try solve [constructor ; intros ; inversion H2];
+    try (inversion IHr1 ; eapply H2 ; constructor) ;
+    try (inversion IHr2 ; eapply H2 ; constructor) ;
+    try (inversion IHl1 ; eapply H2 ; constructor) ;
+    try (inversion IHl2 ; eapply H2 ; constructor).
+
+Theorem acc_conj : forall l r, Acc bool_lt (Conj l r).
+Proof.
+  prove_conj_disj l r y IHl1 IHl2 H2.
+Qed.
+
+Theorem acc_disj : forall l r, Acc bool_lt (Disj l r).
+Proof.
+  prove_conj_disj l r y IHl1 IHl2 H2.
+Qed.
+
+Theorem bool_lt_wf : well_founded bool_lt.
+Proof.
+  Hint Resolve acc_eq acc_mem acc_conj acc_disj.
+  unfold well_founded.
+  intros.
+  constructor.
+  intros.
+
+  Ltac kill_acc :=
+    try solve [
+          apply acc_true
+        | apply acc_false
+        | apply acc_eq
+        | apply acc_mem
+        | apply acc_conj
+        | apply acc_disj
+        ].
+
+  destruct H eqn:? ; kill_acc.
+  * induction l ; kill_acc.
+  * induction r ; kill_acc.
+  * induction l ; kill_acc.
+  * induction r ; kill_acc.
+Qed.
+
+Require Import Relation_Operators.
+
+Lemma rel_trans : forall A (R: A -> A -> Prop),
+    well_founded R -> well_founded (clos_trans A R).
+Proof.
+Admitted.
+(*
+  intros.
+  unfold well_founded.
+  unfold well_founded in H.
+  specialize Acc_inv. intros.
+  specialize (H0 A R).
+  intros.
+  induction (H a).
+  * constructor.
+    intros.
+    induction H3.
+    - auto.
+    - crush.
+      constructor.
+      intros.
+      inversion H3.
+      specialize (H1 A R).
+      specialize (IHclos_trans1 H).
+      destruct H2.
+
+    inversion H1.
+    - auto.
+    - subst.
+Qed.
+*)
+
+Definition bool_lt_trans := clos_trans bool bool_lt.
+Definition bool_lt_trans_wf := rel_trans bool bool_lt bool_lt_wf.
+
+Definition append2 := append.
+Definition append3 (s1 s2 s3: string) : string :=
+  (append (append s1 s2) s3).
+Definition append4 (s1 s2 s3 s4: string) : string :=
+  (append (append s1 s2) (append s3 s4)).
+
+Definition bool_step :
+  forall (env: var_store_stack) (pi: principals),
+    bool -> (bool_value + error).
+  intros env pi.
+  refine (Fix bool_lt_trans_wf
+              (fun _ => (sum bool_value error))
+              (fun (b: bool)
+                   (bool_step : forall y : bool, bool_lt_trans y b -> (sum bool_value error)) =>
+                 match b as b'
+                       return b=b' -> (sum bool_value error) with
+                 | True => fun H => inl (exist _ True _)
+                 | False => fun H => inl (exist _ False _)
+                 | Eq l r =>
+                   fun H =>
+                     match is_sexp_value l as isvl, is_sexp_value r as isvr
+                           return (is_sexp_value l) = isvl -> (is_sexp_value r) = isvr -> (sum bool_value error)
+                     with
+                     | left _, left _ =>
+                       fun _ _ =>
+                         match l as l', r as r'
+                               return l=l' -> r=r' -> (sum bool_value error) with
+                         | Cons ll lr, Cons rl rr =>
+                           fun _ _ =>
+                             match bool_step (Eq ll rl) _ as leq, bool_step (Eq lr rr) _ as req with
+                             | inl (exist _ True _), inl (exist _ True _) =>
+                               inl (exist _ True _)
+                             | inl _, inl _ => inl (exist _ False _)
+                             | inr err, _ => inr err
+                             | _, inr err => inr err
+                             end
+                         | _, _ =>  fun
+                             H1 H2 =>
+                             inl (exist _ False _)
+                         end eq_refl eq_refl
+                     | right _, _ =>
+                       fun _ _ =>
+                         let lstep := sexp_step l env pi in
+                         match lstep as lstep'
+                               return lstep = lstep' -> (sum bool_value error)
+                         with
+                         | inl (exist _ lv _) =>
+                           fun _ => bool_step (Eq lv r) _
+                         | inr err =>
+                           fun _ => inr err
+                         end eq_refl
+                     | _, right _ =>
+                       fun _ _ =>
+                         match sexp_step r env pi as rstep
+                               return (sexp_step r env pi) = rstep -> (sum bool_value error)
+                         with
+                         | inl (exist _ rv _) =>
+                           fun _ =>
+                             bool_step (Eq l rv) _
+                         | inr err =>
+                           fun _ => inr err
+                         end eq_refl
+                     end eq_refl eq_refl
+                 | Mem l r => fun H =>
+                   match is_sexp_value l, is_sexp_value r with
+                   | left _, left _ =>
+                     match l, r with
+                     | l, Cons rl rr =>
+                       match bool_step (Eq l rl) _ as leq, bool_step (Mem l rr) _ as req with
+                       | inl (exist _ False _), inl (exist _ False _) =>
+                         inl (exist _ False _)
+                       | inl _, inl _ => inl (exist _ True _)
+                       | inr err, _ => inr err
+                       | _, inr err => inr err
+                       end
+                     | _, _ => inl (exist _ False _)
+                     end
+                   | right _, _ =>
+                     match sexp_step l env pi with
+                     | inl (exist _ lv _) =>
+                       bool_step (Mem lv r) _
+                     | inr err => inr err
+                     end
+                   | _, right _ =>
+                     match sexp_step r env pi with
+                     | inl (exist _ rv _) =>
+                       bool_step (Mem l rv) _
+                     | inr err => inr err
+                     end
+                   end
+                 | Conj l r => fun H =>
+                   match bool_step l _ as lv, bool_step r _ as rv with
+                   | (inl (exist _ True _)), (inl (exist _ True _)) =>
+                     inl (exist _ True _)
+                   | inl _, inl _ => inl (exist _ False _)
+                   | inr err, _ => inr err
+                   | _, inr err => inr err
+                   end
+                 | Disj l r => fun H =>
+                   match bool_step l _ as lv, bool_step r _ as rv with
+                   | (inl (exist _ False _)), (inl (exist _ False _)) =>
+                     inl (exist _ False _)
+                   | inl _, inl _ => inl (exist _ True _)
+                   | inr err, _ => inr err
+                   | _, inr err => inr err
+                   end
+                 end eq_refl));
+    try solve [crush].
+  * subst. constructor. constructor.
+  * subst. constructor. constructor.
+  * subst. crush.
+    induction r.
+  - constructor. contradiction (n EmptySetIsValue).
+  - constructor. assert (rv = proj1_sig (exist sexp_is_value rv s1)). auto.
+    rewrite H.
+    eapply EqVR.
+    auto.
+  - constructor. assert (rv = proj1_sig (exist sexp_is_value rv s1)). auto.
+    auto.
+    rewrite H.
+    eapply EqVR.
+    auto.
+  *
+    constructor.
+
+    inversion e0.
+    eauto.
+    inversion n.
+    induction (Cons r1 r2
+    eapply EqVR.
+    destruct l.
+    +
+      apply t_trans with (Eq EmptySet r1).
+      ** constructor.
+                rewrite H.
+      eapply t_trans.
+      ** constructor. constructor.
+      ** constructor.
+     constructor 2.
+    eapply EqVR.
+    (
+    eapply EqVR./
+    destruct r ; crush.
+    - crus
+    inversion s1; crush.
+    - eapply EqVR.
+
+  * crush.
+    constructor.
+Defined.
+     assert (ll = (proj1_sig (exist sexp_is_value ll H2))). auto.
+rr))
+| EqVL : forall n v (l: sexp_value) r,
+    bool_lt (Eq (proj1_sig l) r) (Eq (Var n v) r)
+| EqVR : forall n v l (r: sexp_value),
+    bool_lt (Eq l (proj1_sig r)) (Eq l (Var n v))
+Next Obligation.
+Proof.
+  apply Prop.
+Defined.
+Next Obligation.
+Proof.
+  apply Prop.
+Defined.
+Next Obligation.
+Proof.
+  crush.
+Defined.
+Next Obligation.
+  crush.
+Defined.
+Next Obligation.
+  crush.
+Defined.
+Next Obligation.
+  crush.
+Defined.
+Next Obligation.
+  crush.
+Defined.
+Next Obligation.
+  crush.
+Defined.
+  apply Prop.
+Defined.
+Next Obligation.
+Proof.
+  apply Prop.
+Qed.
+Next Obligation.
+  crush.
+  inversion wildcard'.
+  inversion wildcard'0.
+  crush.
+  inversion
+
+  destruct b;
+    inversion b; crush;
+      constructor;
+      inversion H; eauto;
+        inversion H0 ; eauto.
+
+
 Ltac pseudovalue_prover b :=
   (
     destruct b;
