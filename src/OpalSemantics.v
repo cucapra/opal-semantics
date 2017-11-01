@@ -33,7 +33,11 @@ Inductive bool :=
 | True  : bool
 | False : bool.
 
-Definition bool_value := { b: bool | b = True \/ b = False}.
+Inductive bool_is_value : bool -> Prop :=
+| TrueIsValue : bool_is_value True
+| FalseIsValue : bool_is_value False
+.
+Definition bool_value := { b: bool | bool_is_value b}.
 
 Inductive com :=
 | Skip   : com
@@ -224,23 +228,397 @@ eapply ConsValuesIsValue; destruct (_: sexp_value); auto.
 Defined.
 
 Inductive bool_lt : bool -> bool -> Prop :=
-| FakeRelation : forall b1 b2, bool_lt b1 b2
+| ValueLt : forall b1 b2,
+    bool_is_value b1 ->
+    ~ bool_is_value b2 ->
+    bool_lt b1 b2
+| SexpValueLtEqL : forall s1 s2 s3,
+    sexp_is_value s1 ->
+    ~sexp_is_value s2 ->
+    bool_lt (Eq s1 s3) (Eq s2 s3)
+| SexpValueLtEqR : forall s1 s2 s3,
+    sexp_is_value s1 ->
+    ~sexp_is_value s2 ->
+    bool_lt (Eq s3 s1) (Eq s3 s2)
+| SexpValueLtMemL : forall s1 s2 s3,
+    sexp_is_value s1 ->
+    ~sexp_is_value s2 ->
+    bool_lt (Mem s1 s3) (Mem s2 s3)
+| SexpValueLtMemR : forall s1 s2 s3,
+    sexp_is_value s1 ->
+    ~sexp_is_value s2 ->
+    bool_lt (Mem s3 s1) (Mem s3 s2)
+| ConjLtL : forall b1 b2,
+    bool_lt b1 (Conj b1 b2)
+| ConjLtR : forall b1 b2,
+    bool_lt b2 (Conj b1 b2)
+| DisjLtL : forall b1 b2,
+    bool_lt b1 (Disj b1 b2)
+| DisjLtR : forall b1 b2,
+    bool_lt b2 (Disj b1 b2)
+| EqLt : forall ll lr rl rr,
+    sexp_is_value ll ->
+    sexp_is_value lr ->
+    sexp_is_value rl ->
+    sexp_is_value rr ->
+    bool_lt (Conj (Eq ll rl) (Eq lr rr)) (Eq (Cons ll lr) (Cons rl rr))
+| MemLt : forall l rl rr,
+    sexp_is_value l ->
+    sexp_is_value rl ->
+    sexp_is_value rr ->
+    bool_lt (Disj (Eq l rl) (Mem l rr)) (Mem l (Cons rl rr))
 .
-Lemma bool_lt_wf : well_founded bool_lt. Admitted.
+
+Lemma acc_true : Acc bool_lt True.
+Proof.
+  constructor ;
+  intros ;
+  inversion H ;
+  contradiction H1 ;
+  constructor.
+Qed.
+
+Lemma acc_false : Acc bool_lt False.
+Proof.
+  constructor ;
+  intros ;
+  inversion H ;
+  contradiction H1 ;
+  constructor.
+Qed.
+
+Lemma acc_eq_val : forall s1 s2,
+    sexp_is_value s1 ->
+    sexp_is_value s2 ->
+    Acc bool_lt (Eq s1 s2).
+Proof.
+  Hint Constructors bool_is_value sexp_is_value.
+  Hint Resolve acc_true acc_false.
+  Ltac DKill y H1 H2 H3 H4 :=
+    constructor ;
+    intros ;
+    destruct y ;
+    inversion H1 ;
+    inversion H2 ;
+    inversion H3 ;
+    try (solve [contradiction H4]) ;
+    auto.
+
+  induction s1 ; induction s2 ; intros ;
+    try (solve [ DKill y H H1 H2 H7
+               | inversion H ;
+                 DKill y H5 H5 H6 H11
+        ]).
+  * intros.
+    inversion H.
+    inversion H0.
+    specialize (IHs1_1 s2_1 H3 H7).
+    specialize (IHs1_2 s2_2 H4 H8).
+    constructor.
+    intros.
+    destruct y ; inversion H9;
+      try (solve [inversion H10]) ;
+      try (solve [contradiction H15]) ;
+      auto.
+    subst.
+    constructor.
+    intros.
+    destruct y ; inversion H1;
+      try (solve [inversion H2]) ; auto.
+Qed.
+
+Lemma acc_eq : forall s1 s2, Acc bool_lt (Eq s1 s2).
+Proof.
+  Hint Constructors bool_is_value sexp_is_value.
+  Hint Resolve acc_true acc_false acc_eq_val.
+  induction s1 ; induction s2 ; auto.
+  * constructor ; intros. destruct y ; inversion H ;
+      try (solve [inversion H0]) ;
+      try (solve [contradiction H5 ; constructor]);
+      auto.
+  * constructor ; intros. destruct y ; inversion H ;
+      try (solve [inversion H0]) ;
+      try (solve [contradiction H5 ; constructor]);
+      auto.
+  * constructor ; intros. destruct y ; inversion H ;
+      try (solve [inversion H0]) ;
+      try (solve [contradiction H5 ; constructor]);
+      auto.
+  * constructor ; intros. destruct y ; inversion H.
+    - inversion H0.
+    - destruct s ; inversion H.
+      + inversion H6.
+      + subst.
+        inversion H.
+        ** inversion H0.
+        ** subst.
+           constructor.
+           intros.
+           destruct y ; inversion H0;
+             auto ;
+             inversion H1;
+             contradiction H13.
+      + inversion H6.
+      + inversion H9.
+      + subst. inversion H9.
+      + inversion H6.
+      + subst.
+        inversion H.
+        ** inversion H0.
+        ** subst.
+           constructor.
+           intros.
+           destruct y ; inversion H0;
+             auto ;
+             inversion H1;
+             contradiction H13.
+    - subst.
+      destruct s0 ; inversion H.
+      + inversion H0.
+      + constructor.
+        intros.
+        destruct y ; inversion H7;
+          auto;
+          inversion H8 ;
+          contradiction H13.
+      + inversion H0.
+      + inversion H4.
+      + inversion H4.
+      + inversion H0.
+      + constructor.
+        intros.
+        destruct y ; inversion H7;
+          auto;
+          inversion H8 ;
+          contradiction H13.
+    - inversion H0.
+    - inversion H0.
+    - inversion H0.
+    - auto.
+    - auto.
+
+  * constructor ; intros. destruct y ; inversion H.
+    - inversion H0.
+    - destruct s ; inversion H.
+      + inversion H6.
+      + subst.
+        inversion H.
+        ** inversion H0.
+        ** subst.
+           constructor.
+           intros.
+           destruct y ; inversion H0;
+             auto ;
+             inversion H1;
+             contradiction H13.
+      + inversion H6.
+      + inversion H9.
+      + inversion H3.
+      + inversion H6.
+      + subst.
+        inversion H.
+        ** inversion H0.
+        ** subst.
+           constructor.
+           intros.
+           destruct y ; inversion H0 ; auto.
+           -- inversion H1.
+           -- contradiction H13.
+           -- inversion H1.
+           -- inversion H1.
+           -- subst.
+              constructor.
+              intros.
+              destruct y ; inversion H1 ; auto ; try (inversion H2).
+           -- inversion H1.
+    - subst.
+      constructor.
+      intros.
+      destruct y ; inversion H0 ; inversion H1; auto. contradiction H8.
+    - inversion H0.
+    - inversion H0.
+    - inversion H0.
+    - auto.
+    - auto.
+ * subst.
+   constructor.
+   intros.
+   destruct y ; inversion H ; auto; inversion H0 ; contradiction H5; auto.
+ * constructor.
+   intros.
+   destruct y ; inversion H ;auto; inversion H0 ; try (solve [contradiction H5]); auto.
+   - subst.
+constructor.
+   intros.
+   destruct y ; inversion H0 ; auto; inversion H1. contradiction H9.
+   - subst.
+     constructor.
+     intros.
+     destruct y ; inversion H0 ; auto; inversion H1. contradiction H9.
+     subst.
+     constructor.
+     intros.
+     destruct y ; inversion H1; auto ; inversion H2.
+  *
+    constructor.
+    intros.
+    destruct y ; inversion H ; auto ; inversion H0.
+   - subst.
+     constructor. intros.
+     destruct y ; inversion H0 ; auto ; inversion H1. contradiction H9.
+     subst.
+     constructor. intros.
+     destruct y ; inversion H1 ; auto ; inversion H2.
+   - subst.
+     constructor. intros.
+     destruct y ; inversion H0 ; auto ; inversion H1. contradiction H9.
+     subst.
+     constructor. intros.
+     destruct y ; inversion H1 ; auto ; inversion H2.
+   - subst.
+     constructor. intros.
+     destruct y ; inversion H0 ; auto ; inversion H1.
+Qed.
+
+Lemma acc_mem_val : forall s1 s2,
+    sexp_is_value s1 ->
+    sexp_is_value s2 ->
+    Acc bool_lt (Mem s1 s2).
+Proof.
+  Hint Constructors bool_is_value sexp_is_value.
+  Hint Resolve acc_true acc_false.
+  induction s2 ; intros ;
+    try (solve [ DKill y H H1 H2 H7
+               | inversion H ;
+                 DKill y H5 H5 H6 H11
+        ]).
+  * constructor.
+    intros.
+    destruct y ; inversion H1; auto ; inversion H2.
+    - constructor.
+      intros.
+      destruct y ; inversion H0; auto.
+      + subst.
+        inversion H9. inversion H2.
+      + inversion H9.
+        ** subst. inversion H10.
+        ** subst. contradiction H15.
+        ** subst. contradiction H15.
+      + inversion H9.
+        ** subst. inversion H10.
+      + inversion H9.
+        ** subst. inversion H10.
+    -contradiction H7.
+  * inversion H0.
+  * constructor.
+    intros.
+    destruct y ; inversion H1; auto; inversion H2 ; try (solve [contradiction H7]).
+    subst.
+    constructor.
+    intros.
+    destruct y ; inversion H2; auto ; inversion H3 ; try (solve [contradiction H7]).
+Qed.
+
+Lemma acc_mem : forall s2 s1, Acc bool_lt (Mem s1 s2).
+Proof.
+  Hint Constructors bool_is_value sexp_is_value.
+  Hint Resolve acc_true acc_false acc_eq_val acc_eq acc_mem_val.
+  induction s2; intros.
+  * constructor. intros.
+    destruct y ; inversion H; auto ; inversion H0. contradiction H5. auto.
+  * constructor. intros.
+    destruct y ; inversion H; auto ; inversion H0.
+  - constructor. intros.
+    destruct y ; inversion H7; auto ; inversion H8. contradiction H13.
+  - constructor. intros.
+    destruct y ; inversion H7; auto ; inversion H8. contradiction H13.
+    subst.
+    constructor. intros.
+    destruct y ; inversion H0; auto ; inversion H1.
+  * constructor.
+    intros.
+    destruct y ; inversion H; auto ; inversion H0 ; subst.
+    - constructor.
+      intros.
+      destruct y ; inversion H0 ; auto ; inversion H1. contradiction H9.
+      subst.
+      constructor.
+      intros.
+      destruct y ; inversion H1 ; auto ; inversion H2.
+    - constructor.
+      intros.
+      destruct y ; inversion H0 ; auto ; inversion H1. contradiction H9.
+      constructor.
+      intros.
+      destruct y ; inversion H12 ; auto ; inversion H13.
+    - constructor.
+      intros.
+      destruct y ; inversion H0 ; auto ; inversion H1.
+Qed.
+
+Lemma acc_all : forall b, Acc bool_lt b.
+Proof.
+  Hint Constructors bool_is_value sexp_is_value.
+  Hint Resolve acc_true acc_false acc_eq acc_mem.
+  Ltac foobar y H1 H2 := constructor ; intros ; destruct y ; inversion H1 ; auto ; inversion H2.
+  induction b ; try (solve [foobar y H H0]).
+  * apply acc_eq.
+  * apply acc_mem.
+  * constructor.
+    intros.
+    destruct y ; inversion H; subst; auto ; try (solve [inversion H0]).
+  * constructor.
+    intros.
+    destruct y ; inversion H; subst; auto ; try (solve [inversion H0]).
+Qed.
+
+Lemma bool_lt_wf : well_founded bool_lt.
+Proof.
+  unfold well_founded.
+  apply acc_all.
+Qed.
+
+Require Import Relation_Operators.
+
+Lemma rel_trans : forall A (R: A -> A -> Prop),
+    well_founded R -> well_founded (clos_trans A R).
+Proof.
+  intros.
+  unfold well_founded.
+  unfold well_founded in H.
+  specialize Acc_inv. intros.
+  specialize (H0 A R).
+  intros.
+  induction (H a).
+  * constructor.
+    intros.
+    induction H3.
+    - auto.
+    - intuition.
+      eapply IHclos_trans1; auto.
+      intros.
+      specialize (Acc_inv H4).
+      crush.
+Qed.
+
+Definition bool_lt_trans := clos_trans bool bool_lt.
+Definition bool_lt_trans_wf : well_founded bool_lt_trans := rel_trans bool_lt_wf.
+
 
 Definition bool_step : forall (Sigma: var_store_stack)
                               (pi: principals),
     bool -> (bool_value + error).
   intros Sigma pi.
   refine (
-      Fix bool_lt_wf
+      Fix bool_lt_trans_wf
           (fun _ => (sum bool_value error))
           (fun (b: bool)
-               (bool_step : forall y : bool, bool_lt y b -> (bool_value + error)) =>
-             match b with
-             | True => inl (exist _ True _)
-             | False => inl (exist _ False _)
+               (bool_step : forall y : bool, bool_lt_trans y b -> (bool_value + error)) =>
+             match b as b' return b = b' -> (bool_value + error) with
+             | True => fun _ => inl (exist _ True _)
+             | False => fun _ => inl (exist _ False _)
              | Conj l r =>
+               fun _ =>
                match (bool_step l _), (bool_step r _) with
                | inl (exist _ True _), inl (exist _ True _) =>
                  inl (exist _ True _)
@@ -249,6 +627,7 @@ Definition bool_step : forall (Sigma: var_store_stack)
                | _, inr err => inr err
                end
              | Disj l r =>
+               fun _ =>
                match (bool_step l _), (bool_step r _) with
                | inl (exist _ False _), inl (exist _ False _) =>
                  inl (exist _ False _)
@@ -257,18 +636,27 @@ Definition bool_step : forall (Sigma: var_store_stack)
                | _, inr err => inr err
                end
              | Eq l r =>
-               match (sexp_step l Sigma pi),
-                     (sexp_step r Sigma pi) with
+               fun _ =>
+                 let lv := (sexp_step l Sigma pi) in
+                 let rv := (sexp_step r Sigma pi) in
+                 match lv as lv', rv as rv'
+                       return lv=lv' -> rv=rv' -> (bool_value + error)
+                 with
                | inl (exist _ (Cons ll lr) _),
                  inl (exist _ (Cons rl rr) _) =>
+                 fun _ _ =>
                  let lb := Eq ll rl in
                  let rb := Eq lr rr in
                  bool_step (Conj lb rb) _
-               | inl _, inl _ => inl (exist _ False _)
-               | inr err, _ => inr err
-               | _, inr err => inr err
-               end
+               | inl _, inl _ =>
+                 fun _ _ => inl (exist _ False _)
+               | inr err, _ =>
+                 fun _ _ => inr err
+               | _, inr err =>
+                 fun _ _ => inr err
+                 end eq_refl eq_refl
              | Mem l r =>
+               fun _ =>
                match (sexp_step l Sigma pi),
                      (sexp_step r Sigma pi) with
                | inl (exist _ lv _),
@@ -280,7 +668,9 @@ Definition bool_step : forall (Sigma: var_store_stack)
                | inr err, _ => inr err
                | _, inr err => inr err
                end
-             end)) ; auto ; constructor.
+             end eq_refl)) ; auto.
+  *
+
 Defined.
 
 Definition merge_variable (Sig_o Sig_t: var_store_stack) (pi: principals) (mu: mergers) (key: node*var) (hval: sexp_value) (optsig: var_store + error)
