@@ -142,43 +142,16 @@ Definition location := node.
 Definition handlers := op -> option (node * var * sexp).
 Definition mergers := node -> var -> option sexp.
 
-Record state :=
-  mkState {
-      sigma : var_store ;
-      Sigma : var_store_stack ;
-      omega : world_store ;
-      pi : principals ;
-      rho : location ;
-      eta : handlers ;
-      mu : mergers
-    }.
-
-Definition error := string.
-
-Definition M (A:Type) := state -> (state * A) + error.
-
-Definition ret {A: Type} (x:A) : M A :=
-  fun s => inl (s, x).
-
-Definition bind {A B:Type} (m:M A) (f: A -> M B) : M B :=
-  fun s1 =>
-    match m s1 with
-    | inl (s2,v) => f v s2
-    | inr err => inr err
-    end.
-
-Definition map {A B:Type} (m: M A) (f: A -> B) : M B :=
-  fun s1 =>
-    match m s1 with
-    | inl (s2, v) => inl (pair s2 (f v))
-    | inr err => inr err
-    end.
-
-Notation "x <- c1 ; c2" :=
-  (bind c1 (fun x => c2))
-    (right associativity, at level 84, c1 at next level).
-
-Definition err {A:Type} (err: error) : M A := fun s => inr err.
+Inductive error :=
+| GenericErr : string -> error
+| LookupErr  : node -> var -> error
+| ReadPermErr : node -> var -> principals -> error
+| WritePermErr : node -> var -> principals -> error
+| MergeErr : node -> var -> mergers -> error
+| HandleErr : op -> handlers -> error
+| BoolEvalErr : bool -> error
+| CommitErr : world -> world_store -> error
+.
 
 Definition empty_env : var_store := NodeVarMap.empty sexp_value.
 
@@ -188,115 +161,63 @@ Definition set_env (e: var_store) (n: node) (v: var) (val: sexp_value) : var_sto
 Definition get_env (e: var_store) (n: node) (v: var) : option sexp_value :=
   NodeVarMap.find (n, v) e.
 
-Definition lookup (n: node) (v: var) : M sexp_value :=
-  let lookup' :=
-      fix lookup' (Sigma: var_store_stack) :=
-        match Sigma with
-        | nil => inr (append4 "Could not find " n "." v)
-        | cons e rest =>
-          match get_env e n v with
-          | Some res => inl res
-          | None => lookup' rest
-          end
-        end
-  in
-  fun state =>
-    match lookup' (Sigma state) with
-    | inl res => inl (state, res)
-    | inr error => inr error
-    end.
+Fixpoint lookup (n: node) (v: var) (Sigma: var_store_stack)
+  : (sexp_value + error) :=
+  match Sigma with
+  | nil => inr (LookupErr n v)
+  | cons e rest =>
+    match get_env e n v with
+    | Some res => inl res
+    | None => lookup n v rest
+    end
+  end.
 
 Definition empty_world_store : world_store :=
   fun _ => None.
 
-Definition set_world_store {A:Type} (u: world) (S: var_store_stack) (s: var_store) : M unit :=
-  fun state =>
-    let w := omega state in
-    let world_store :=
-        fun u' =>
-          match string_dec u u' with
-          | left _ => Some (S, s)
-          | right _ => w u'
-          end
-    in
-    let state' := mkState (sigma state) (Sigma state) world_store (pi state)
-                          (rho state) (eta state) (mu state) in
-    inl (state', tt).
-
-Definition check_principals (n: node) : M unit :=
-  fun state =>
-    match set_mem string_dec n (pi state) with
-    | true => inl (state, tt)
-    | false => inr (append "No permission to read " n)
+Definition set_world_store (w: world_store) (u: world) (S: var_store_stack) (s: var_store) : world_store :=
+  fun u' =>
+    match string_dec u u' with
+    | left _ => Some (S, s)
+    | right _ => w u'
     end.
-
-Definition push_principal (n: node) : M unit :=
-  fun state =>
-    inl (mkState (sigma state) (Sigma state) (omega state) (cons n (pi state))
-                 (rho state) (eta state) (mu state),
-         tt).
-
-Definition pop_principal : M unit :=
-  fun state =>
-    match (pi state) with
-    | nil => inr "No principal to pop"
-    | cons _ rest =>
-      inl (mkState (sigma state) (Sigma state) (omega state) rest
-                   (rho state) (eta state) (mu state),
-           tt)
-    end.
-
-Definition set_location (n: node) : M node :=
-  fun state =>
-      inl (mkState (sigma state) (Sigma state) (omega state) (pi state)
-                   n (eta state) (mu state),
-           (rho state)).
 
 Definition empty_handlers : handlers :=
   fun _ => None.
 
-Definition set_handler (o: op) (n: node) (v: var) (s: sexp) : M unit :=
-  fun state =>
-    let h := eta state in
-    let h' :=
-        fun o' =>
-          match string_dec o o' with
-          | left _ => Some (n, v, s)
-          | right _ => h o'
-          end
-    in
-    let state' := mkState (sigma state) (Sigma state) (omega state) (pi state)
-                          (rho state) h' (mu state) in
-    inl (state', tt).
+Definition set_handler (h: handlers) (o: op) (n: node) (v: var) (s: sexp) : handlers :=
+  fun o' =>
+    match string_dec o o' with
+    | left _ => Some (n, v, s)
+    | right _ => h o'
+    end.
 
 Definition empty_mergers : mergers :=
   fun _ _ => None.
 
-Definition set_merger (n: node) (v: var) (s: sexp) : M unit :=
-  fun state =>
-    let m := mu state in
-    let m' :=
-        fun n' v' =>
-          match (string_dec n n', string_dec v v') with
-          | (left _, left _) => Some s
-          | _ => m n' v'
-          end
-    in
-    let state' := mkState (sigma state) (Sigma state) (omega state) (pi state)
-                          (rho state) (eta state) m' in
-    inl (state', tt).
+Definition set_merger (m: mergers) (n: node) (v: var) (s: sexp) : mergers :=
+  fun n' v' =>
+    match (string_dec n n', string_dec v v') with
+    | (left _, left _) => Some s
+    | _ => m n' v'
+    end.
 
-Program Fixpoint sexp_step (s: sexp) : M sexp_value :=
+Program Fixpoint sexp_step (s: sexp) (Sigma: var_store_stack) (pi: principals)
+  : (sexp_value + error) :=
   match s with
-  | EmptySet => ret (exist _ EmptySet _)
+  | EmptySet => inl EmptySet
   | Cons l r =>
-    lv <- sexp_step l ;
-      rv <- sexp_step r ;
-      ret (exist _ (Cons (proj1_sig lv) (proj1_sig rv)) _)
+    match (sexp_step l Sigma pi), (sexp_step r Sigma pi) with
+    | inl lv, inl rv =>
+      inl (Cons lv rv)
+    | inr err, _ => inr err
+    | _, inr err => inr err
+    end
   | Var n v =>
-    _  <- check_principals n ;
-      val <- lookup n v ;
-      ret val
+    match set_mem string_dec n pi with
+    | true => lookup n v Sigma
+    | false => inr (ReadPermErr n v pi)
+    end
   end.
 Next Obligation.
 eapply ConsValuesIsValue; destruct (_: sexp_value); auto.
@@ -307,111 +228,97 @@ Inductive bool_lt : bool -> bool -> Prop :=
 .
 Lemma bool_lt_wf : well_founded bool_lt. Admitted.
 
-Definition bool_step : bool -> M bool_value.
+Definition bool_step : forall (Sigma: var_store_stack)
+                              (pi: principals),
+    bool -> (bool_value + error).
+  intros Sigma pi.
   refine (
       Fix bool_lt_wf
-          (fun _ => M bool_value)
+          (fun _ => (sum bool_value error))
           (fun (b: bool)
-               (bool_step : forall y : bool, bool_lt y b -> M bool_value) =>
+               (bool_step : forall y : bool, bool_lt y b -> (bool_value + error)) =>
              match b with
-             | True => ret (exist _ True _)
-             | False => ret (exist _ False _)
+             | True => inl (exist _ True _)
+             | False => inl (exist _ False _)
              | Conj l r =>
-               lv <- bool_step l _ ;
-               rv <- bool_step r _ ;
-               match (proj1_sig lv), (proj1_sig rv) with
-               | True, True => ret (exist _ True _)
-               | _, _ => ret (exist _ False _)
+               match (bool_step l _), (bool_step r _) with
+               | inl (exist _ True _), inl (exist _ True _) =>
+                 inl (exist _ True _)
+               | inl _, inl _ => inl (exist _ False _)
+               | inr err, _ => inr err
+               | _, inr err => inr err
                end
              | Disj l r =>
-               lv <- bool_step l _ ;
-               rv <- bool_step r _ ;
-               match (proj1_sig lv), (proj1_sig rv) with
-               | False, False => ret (exist _ False _)
-               | _, _ => ret (exist _ True _)
+               match (bool_step l _), (bool_step r _) with
+               | inl (exist _ False _), inl (exist _ False _) =>
+                 inl (exist _ False _)
+               | inl _, inl _ => inl (exist _ True _)
+               | inr err, _ => inr err
+               | _, inr err => inr err
                end
              | Eq l r =>
-               lv <- sexp_step l ;
-               rv <- sexp_step r ;
-               match (proj1_sig lv), (proj1_sig rv) with
-               | Cons ll lr, Cons rl rr =>
+               match (sexp_step l Sigma pi),
+                     (sexp_step r Sigma pi) with
+               | inl (exist _ (Cons ll lr) _),
+                 inl (exist _ (Cons rl rr) _) =>
                  let lb := Eq ll rl in
                  let rb := Eq lr rr in
                  bool_step (Conj lb rb) _
-               | _, _ => ret (exist _ False _)
+               | inl _, inl _ => inl (exist _ False _)
+               | inr err, _ => inr err
+               | _, inr err => inr err
                end
              | Mem l r =>
-               lv <- sexp_step l ;
-               rv <- sexp_step r ;
-               match (proj1_sig lv), (proj1_sig rv) with
-               | lv, Cons rl rr =>
+               match (sexp_step l Sigma pi),
+                     (sexp_step r Sigma pi) with
+               | inl (exist _ lv _),
+                 inl (exist _ (Cons rl rr) _) =>
                  let lb := Eq lv rl in
                  let rb := Mem lv rr in
                  bool_step (Disj lb rb) _
-               | _, _ => ret (exist _ False _)
+               | inl _, inl _ => inl (exist _ False _)
+               | inr err, _ => inr err
+               | _, inr err => inr err
                end
              end)) ; auto ; constructor.
 Defined.
 
-Program Fixpoint com_step (c: com) (state: state) :=
-  match c with
-  | Skip => ret tt
-  | Seq l r =>
-    _ <- com_step l ; com_step r
-  | If b t f =>
-    bv <- bool_step b ;
-      match bv with
-      | True => com_step t
-      | False => com_step f
-      | _ => err "Boolean did not evaluate to value!"
-      end
-  | With n c =>
-    fun s =>
-      (_ <- push_principal n ;
-         _ <- com_step c) s
-      pop_principal
-  | At n c =>
-    n' <- set_location n ;
-      _ <- com_step c ;
-      _ <- set_location n' ;
-      ret tt
-  | Hyp n c =>
-
-  end.
-
-Definition merge_variable (Sig_o Sig_t: var_store_stack) (pi: principals) (mu: mergers) (key: node*var) (hval: sexp_value) (optsig: option var_store) : option var_store :=
+Definition merge_variable (Sig_o Sig_t: var_store_stack) (pi: principals) (mu: mergers) (key: node*var) (hval: sexp_value) (optsig: var_store + error)
+  : (var_store + error) :=
   let (n, v) := key in
-  let orig_var := lookup Sig_o n v in
-  let curr_var := lookup Sig_t n v in
+  let orig_var := lookup n v Sig_o in
+  let curr_var := lookup n v Sig_t in
   let sho := mu n v in
   match optsig, orig_var, curr_var, sho with
-  | Some acc, Some oval, Some cval, Some sh =>
+  | inl acc, inl oval, inl cval, Some sh =>
     let hsig := set_env empty_env "scratch" "hypo" hval in
     let osig := set_env hsig "scratch" "orig" oval in
     let csig := set_env osig "scratch" "curr" cval in
     match sexp_step sh (cons csig Sig_t) pi with
-    | Some val =>
-      Some (set_env acc n v val)
-    | None => None
+    | inl val =>
+      inl (set_env acc n v val)
+    | inr err => inr err
     end
-  | Some acc, _, _, _ => Some acc
-  | _, _, _, _ => None
+  | _, _, _, None => inr (MergeErr n v mu)
+  | inl acc, _, _, _ => inl acc
+  | inr err, _, _, _ => inr err
   end.
 
-Fixpoint com_step (c: com) : M (var_store * world_store) :=
+Fixpoint com_step (c: com) (sigma: var_store) (Sigma: var_store_stack) (omega: world_store) (pi: principals) (rho: location) (eta: handlers) (mu: mergers) : (var_store * world_store) + error :=
   match c with
-  | Skip => Some (sigma, omega)
+  | Skip => inl (sigma, omega)
   | Seq l r =>
     match com_step l sigma Sigma omega pi rho eta mu with
-    | Some (sigma', omega') =>
+    | inl (sigma', omega') =>
       com_step r sigma' Sigma omega' pi rho eta mu
-    | None => None
+    | inr err => inr err
     end
   | If b t f =>
-    match bool_step b (cons sigma Sigma) pi as b' with
-    | Some (exist _ True _) => com_step t sigma Sigma omega pi rho eta mu
-    | Some (exist _ False _) => com_step f sigma Sigma omega pi rho eta mu
-    | _ => None
+    match bool_step (cons sigma Sigma) pi b as b' with
+    | inl (exist _ True _) => com_step t sigma Sigma omega pi rho eta mu
+    | inl (exist _ False _) => com_step f sigma Sigma omega pi rho eta mu
+    | inl _ => inr (BoolEvalErr b)
+    | inr err => inr err
     end
   | With n c' =>
     com_step c' sigma Sigma omega (cons n pi) rho eta mu
@@ -425,44 +332,42 @@ Fixpoint com_step (c: com) : M (var_store * world_store) :=
     match eta op with
     | Some (n, v, s) =>
       match sexp_step s (cons sigma Sigma) pi with
-      | Some s' =>
+      | inl s' =>
         match set_mem string_dec n pi with
         | true =>
           let sigma' := set_env sigma n v s' in
-          Some (sigma', omega)
-        | false =>
-          None
+          inl (sigma', omega)
+        | false => inr (WritePermErr n v pi)
         end
-      | None => None
+      | inr err => inr err
       end
-    | None => None
+    | None => inr (HandleErr op eta)
     end
   | Hyp w c =>
     match com_step c empty_env (cons sigma Sigma) empty_world_store pi rho eta mu with
-    | Some (sigma', omega') =>
+    | inl (sigma', omega') =>
       let omega'' := set_world_store omega w (cons sigma Sigma) sigma' in
-      Some (sigma, omega')
-    | None => None
+      inl (sigma, omega')
+    | inr err => inr err
     end
   | Commit w =>
     match omega w with
     | Some (Sigma_o, sigma_h) =>
       let merge_fold := (merge_variable Sigma_o (cons sigma Sigma) (cons "scratch" pi) mu) in
-      match NodeVarMap.fold merge_fold sigma_h (Some sigma) with
-      | Some sigma' => Some (sigma', omega)
-      | None => None
+      match NodeVarMap.fold merge_fold sigma_h (inl sigma) with
+      | inl sigma' => inl (sigma', omega)
+      | inr err => inr err
       end
-    | None => None
+    | None => inr (CommitErr w omega)
     end
   end.
 
-
 Definition run (c: com) :=
   match com_step c empty_env nil empty_world_store nil "" empty_handlers empty_mergers with
-  | Some (sigma, omega) => Some sigma
-  | None => None
+  | inl (sigma, omega) => inl sigma
+  | inr err => inr err
   end.
 
-Definition test_com := (With "Alice" (Seq (Handle "alice" "times" "%tmp" (Cons EmptySet (Cons EmptySet (Cons EmptySet (Cons EmptySet EmptySet)))) EmptySet (Op "%tmp")) (With "Bob" (Seq (Handle "bob" "times" "%tmp" (Cons EmptySet (Cons EmptySet (Cons EmptySet (Cons EmptySet EmptySet)))) EmptySet (Op "%tmp")) (With "Alice" (Seq (Handle "alice" "fitness" "%tmp" EmptySet EmptySet (Op "%tmp")) (Handle "alice" "fitness" "set_fitness" (Cons (Var "alice" "fitness") (Var "bob" "fitness")) (Cons (Var "scratch" "orig") (Cons (Var "scratch" "hypo") (Var "scratch" "curr"))) (Hyp "world" (Seq (At "DataCenter" (With "Bob" (Op "set_fitness"))) (Commit "world")))))))))).
+Definition test_com := (Seq (With "alice" (Handle "alice" "times" "__tmp" (Cons EmptySet (Cons EmptySet (Cons EmptySet (Cons EmptySet EmptySet)))) EmptySet (Op "__tmp"))) (Seq (With "bob" (Handle "bob" "times" "__tmp" (Cons EmptySet (Cons EmptySet (Cons EmptySet (Cons EmptySet EmptySet)))) EmptySet (Op "__tmp"))) (With "alice" (Seq (Handle "alice" "fitness" "__tmp" EmptySet EmptySet (Op "__tmp")) (Seq (Handle "alice" "fitness" "set_fitness" (Cons (Var "alice" "fitness") (Var "bob" "fitness")) (Cons (Var "scratch" "orig") (Cons (Var "scratch" "hypo") (Var "scratch" "curr"))) (Hyp "world" (At "DataCenter" (With "Bob" (Op "set_fitness"))))) (Commit "world")))))).
 
 Eval compute in (run test_com).
