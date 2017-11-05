@@ -81,6 +81,133 @@ Tiny turing-incomplete language based on \imp with sexps:
 \alt \false
 \end{grammar}
 
+\section{Typing Judgement}
+
+Well-formedness conditions:
+\begin{itemize}
+\item all used operations are defined
+\item all node/var accesses are defined
+\item all node accesses are permissioned
+\item all committed worlds are defined
+\item worlds are committed at most once (affine types)
+\end{itemize}
+
+\subsection{Terminology}
+\begin{tabular}{l c p{6.4cm}}
+$\Sigma$ : & $2^{\synt{Node} \times \synt{Var}}$ & Set of variables in scope \\
+$H$ : & $2^{\synt{Op}}$ & Set of handlers in scope \\
+$\Pi$ : & $2^{\synt{Node}}$ & Set of nodes giving permission \\
+$\Omega$ : & $2^{\synt{World}}$ & Set of worlds in scope
+\end{tabular}
+
+\subsection{Commands}
+
+\begin{prooftree}
+\AxiomC{}
+\UnaryInfC{$\Omega, \Pi, \Sigma, H \vdash \skipcom : \Omega$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{$\Omega, \Pi, \Sigma, H \vdash c_1 : \Omega'$}
+\AxiomC{$\Omega', \Pi, \Sigma, H \vdash c_2 : \Omega''$}
+\BinaryInfC{$\Omega, \Pi, \Sigma, H \vdash c_1 ; c_2 : \Omega''$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{$\Sigma \vdash b : \textsc{Bool}$}
+\AxiomC{$\Omega', \Pi, \Sigma, H \vdash c_1 : \Omega'$}
+\AxiomC{$\Omega', \Pi, \Sigma, H \vdash c_2 : \Omega''$}
+\TrinaryInfC{$\Omega, \Pi, \Sigma, H \vdash \ifcom{b}{c_1}{c_2} : \Omega$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{$\Omega, \Pi, \Sigma, H \vdash c : \Omega''$}
+\UnaryInfC{$\Omega, \Pi, \Sigma, H \vdash \hypcom{u}{c} : \Omega \cup \{u\}$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{$u \in \Omega$}
+\UnaryInfC{$\Omega, \Pi, \Sigma, H \vdash \commitcom{u} : \Omega \setminus \{u\}$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{$n \in \Pi$}
+\AxiomC{$\Sigma \vdash s_1 : \textsc{Sexp}$}
+\AxiomC{$\Sigma \vdash s_2 : \textsc{Sexp}$}
+\AxiomC{$\varnothing, \Pi, \Sigma \cup \{(n, v)\}, H \cup \{op\} \vdash c : \Omega'$}
+\QuaternaryInfC{$\Omega, \Pi, \Sigma, H \vdash \handlecom{n}{v}{op}{s_1}{s_2}{c} : \Omega$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{$op \in H$}
+\UnaryInfC{$\Omega, \Pi, \Sigma, H \vdash \opcom{op} : \Omega$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{$\Omega, \Pi \cup \{n\}, \Sigma, H \vdash c : \Omega'$}
+\UnaryInfC{$\Omega, \Pi, \Sigma, H \vdash \withcom{n}{c} : \Omega'$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{$\Omega, \Pi, \Sigma, H \vdash c : \Omega'$}
+\UnaryInfC{$\Omega, \Pi, \Sigma, H \vdash \atcom{n}{c} : \Omega'$}
+\end{prooftree}
+
+\subsection{Booleans}
+
+\begin{prooftree}
+\AxiomC{}
+\UnaryInfC{$\Sigma \vdash \true : \textsc{Bool}$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{}
+\UnaryInfC{$\Sigma \vdash \false : \textsc{Bool}$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{$\Sigma \vdash b_1 : \textsc{Bool}$}
+\AxiomC{$\Sigma \vdash b_2 : \textsc{Bool}$}
+\BinaryInfC{$\Sigma \vdash b_1 \land b_2 : \textsc{Bool}$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{$\Sigma \vdash b_1 : \textsc{Bool}$}
+\AxiomC{$\Sigma \vdash b_2 : \textsc{Bool}$}
+\BinaryInfC{$\Sigma \vdash b_1 \lor b_2 : \textsc{Bool}$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{$\Sigma \vdash s_1 : \textsc{Sexp}$}
+\AxiomC{$\Sigma \vdash s_2 : \textsc{Sexp}$}
+\BinaryInfC{$\Sigma \vdash s_1 = s_2 : \textsc{Bool}$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{$\Sigma \vdash s_1 : \textsc{Sexp}$}
+\AxiomC{$\Sigma \vdash s_2 : \textsc{Sexp}$}
+\BinaryInfC{$\Sigma \vdash s_1 \in s_2 : \textsc{Bool}$}
+\end{prooftree}
+
+\subsection{Sexps}
+
+\begin{prooftree}
+\AxiomC{}
+\UnaryInfC{$\Sigma \vdash \varnothing : \textsc{Sexp}$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{$(n, v) \in \Sigma$}
+\UnaryInfC{$\Sigma \vdash n.v : \textsc{Sexp}$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{$\Sigma \vdash s_1 : \textsc{Sexp}$}
+\AxiomC{$\Sigma \vdash s_2 : \textsc{Sexp}$}
+\BinaryInfC{$\Sigma \vdash (s_1 . s_2) : \textsc{Sexp}$}
+\end{prooftree}
+
+
 \section{Small Step Semantics}
 \subsection{Terminology}
 
