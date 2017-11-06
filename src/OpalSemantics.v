@@ -1,5 +1,5 @@
-Require Import String ListSet CpdtTactics ListSet Wf FMapList
-        Coq.Structures.OrderedTypeEx String.
+Require Import String ListSet CpdtTactics ListSet Wf String.
+Require Import OpalSrc.OpalUtil.
 
 Set Implicit Arguments.
 Open Scope string_scope.
@@ -62,95 +62,13 @@ Inductive com :=
 | Handle : node -> var -> op -> sexp -> sexp -> com -> com
 | Op     : op -> com.
 
-Fixpoint string_lt (l r: string) : Prop :=
-  match l, r with
-  | EmptyString, EmptyString => Logic.False
-  | EmptyString, _ => Logic.True
-  | String lh lr, String rh rr =>
-    match Compare_dec.lt_eq_lt_dec (Ascii.nat_of_ascii lh) (Ascii.nat_of_ascii rh) with
-    | inleft (left _) => Logic.True
-    | inleft (right _) => string_lt lr rr
-    | inright _ => Logic.False
-    end
-  | _, _ => Logic.False
-  end.
-
-Module String_as_OT <: UsualOrderedType.
-  Definition t := string.
-
-  Definition eq := @eq string.
-  Definition eq_refl := @eq_refl t.
-  Definition eq_sym := @eq_sym t.
-  Definition eq_trans := @eq_trans t.
-
-  Definition lt := string_lt.
-
-  Lemma lt_trans : forall x y z : t, string_lt x y -> string_lt y z -> string_lt x z.
-  Proof.
-    intros x.
-    induction x; intros ; destruct z; crush; destruct y; crush.
-    specialize IHx with y z.
-    do 3 (edestruct Compare_dec.lt_eq_lt_dec; crush).
-    destruct s, s0; crush.
-    destruct s, s0; crush.
-  Qed.
-
-  Lemma lt_not_eq : forall x y : t, string_lt x y -> ~ eq x y.
-  Proof.
-    intros x.
-    induction x ; destruct y ; crush.
-    edestruct Compare_dec.lt_eq_lt_dec; crush.
-    unfold eq in H0.
-    destruct s. crush.
-    specialize IHx with y.
-    crush.
-  Qed.
-
-  Definition compare x y : OrderedType.Compare string_lt eq x y.
-  Proof.
-    generalize y.
-    clear y.
-    induction x; intros.
-    * destruct y.
-      - assert (eq "" "").
-        crush.
-        constructor 2. auto.
-      - constructor 1. crush.
-    * destruct y.
-      - constructor 3. crush.
-      - remember (Ascii.nat_of_ascii a) as an.
-        remember (Ascii.nat_of_ascii a0) as a0n.
-        specialize Ascii.ascii_nat_embedding with a.
-        specialize Ascii.ascii_nat_embedding with a0.
-        intros.
-        specialize IHx with y.
-        destruct Compare_dec.lt_eq_lt_dec with an a0n ;
-          try (destruct s) ;
-          inversion IHx;
-          [> constructor 1 ..
-          | constructor 2
-          | constructor 3
-          | constructor 3
-          | constructor 3
-          | constructor 3 ] ;
-          crush ;
-          edestruct Compare_dec.lt_eq_lt_dec;
-          crush.
-  Qed.
-
-  Definition eq_dec := string_dec.
-End String_as_OT.
-
-Module NodeVar_OT := PairOrderedType String_as_OT String_as_OT.
-Module NodeVarMap := FMapList.Make(NodeVar_OT).
-
 Definition append2 := append.
 Definition append3 (s1 s2 s3: string) : string :=
   (append (append s1 s2) s3).
 Definition append4 (s1 s2 s3 s4: string) : string :=
   (append (append s1 s2) (append s3 s4)).
 
-Definition var_store := NodeVarMap.t sexp_value.
+Definition var_store := StringPairMap.t sexp_value.
 Definition var_store_stack := list var_store.
 Definition world_store := world -> option (var_store_stack * var_store).
 Definition principals := set node.
@@ -169,13 +87,13 @@ Inductive error :=
 | CommitErr : world -> world_store -> error
 .
 
-Definition empty_env : var_store := NodeVarMap.empty sexp_value.
+Definition empty_env : var_store := StringPairMap.empty sexp_value.
 
 Definition set_env (e: var_store) (n: node) (v: var) (val: sexp_value) : var_store :=
-  NodeVarMap.add (n, v) val e.
+  StringPairMap.add (n, v) val e.
 
 Definition get_env (e: var_store) (n: node) (v: var) : option sexp_value :=
-  NodeVarMap.find (n, v) e.
+  StringPairMap.find (n, v) e.
 
 Fixpoint lookup (n: node) (v: var) (Sigma: var_store_stack)
   : (sexp_value + error) :=
@@ -1058,7 +976,7 @@ Fixpoint com_step (c: com) (sigma: var_store) (Sigma: var_store_stack) (omega: w
     match omega w with
     | Some (Sigma_o, sigma_h) =>
       let merge_fold := (merge_variable Sigma_o (cons sigma Sigma) (cons "scratch" pi) mu) in
-      match NodeVarMap.fold merge_fold sigma_h (inl sigma) with
+      match StringPairMap.fold merge_fold sigma_h (inl sigma) with
       | inl sigma' => inl (sigma', omega)
       | inr err => inr err
       end
@@ -1074,4 +992,4 @@ Definition run (c: com) :=
 
 Definition test_com := (Seq (With "alice" (Handle "alice" "times" "__tmp" (Cons EmptySet (Cons EmptySet (Cons EmptySet (Cons EmptySet EmptySet)))) EmptySet (Op "__tmp"))) (Seq (With "bob" (Handle "bob" "times" "__tmp" (Cons EmptySet (Cons EmptySet (Cons EmptySet (Cons EmptySet EmptySet)))) EmptySet (Op "__tmp"))) (With "alice" (Seq (Handle "alice" "fitness" "__tmp" EmptySet EmptySet (Op "__tmp")) (Seq (Handle "alice" "fitness" "set_fitness" (Cons (Var "alice" "fitness") (Var "bob" "fitness")) (Cons (Var "scratch" "orig") (Cons (Var "scratch" "hypo") (Var "scratch" "curr"))) (Hyp "world" (At "DataCenter" (With "Bob" (Op "set_fitness"))))) (Commit "world")))))).
 
-Eval compute in (run test_com).
+Eval native_compute in (run test_com).

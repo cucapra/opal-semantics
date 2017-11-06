@@ -6,5 +6,6 @@ lib/cpdtlib/MoreSpecif.v
 
 -R src OpalSrc
 
+src/OpalUtil.v
 src/OpalSemantics.v
 src/OpalInterp.v
