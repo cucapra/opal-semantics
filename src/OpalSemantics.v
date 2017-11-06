@@ -1,4 +1,4 @@
-Require Import String ListSet CpdtTactics ListSet Wf String.
+Require Import String ListSet CpdtTactics Wf String.
 Require Import OpalSrc.OpalUtil.
 
 Set Implicit Arguments.
