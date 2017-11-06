@@ -272,28 +272,44 @@ In this semantics, \textsc{At} is effectively a noop/passthrough, resulting in b
 \end{prooftree}
 
 \subsection{Handler commands}
-We describe handlers as a tuple of $(\synt{Node}, \synt{Var}, \synt{Op}, \synt{Sexp}_h, \synt{Sexp}_m, \synt{Com})$, where $\synt{Node}$ is the node to write results to, $\synt{Var}$ is the variable on that node to write results to, $\synt{Op}$ is the name of the handler, $\synt{Sexp}_h$ is a sexp that gets lazily evaluated with its results written to $\synt{Node}.\synt{Var}$ each time $\synt{Op}$ is called, and $\synt{Sexp}_m$ is a sexp that gets lazily evaluated upon merge conflicts within a variable upon \texttt{commit}ing a hypothetical world, with $\varnothing.\textsc{Orig}$ set to the original value of the variable before the hypothetical execution, $\varnothing.\textsc{Hyp}$ set to the value of the variable after the hypothetical execution, and $\varnothing.\textsc{Curr}$ set to the value of the variable in the context of where $\texttt{commit}$ is being called.
+We describe handlers as a tuple of $(\synt{Node}, \synt{Var}, \synt{Op}, \synt{Sexp}_h, \synt{Sexp}_m, \synt{Com})$, where $\synt{Node}$ is the node to write results to, $\synt{Var}$ is the variable on that node to write results to, $\synt{Op}$ is the name of the handler, $\synt{Sexp}_h$ is a sexp that gets lazily evaluated with its results written to $\synt{Node}.\synt{Var}$ each time $\synt{Op}$ is called, and $\synt{Sexp}_m$ is a sexp that gets lazily evaluated upon merge conflicts within a variable upon \texttt{commit}ing a hypothetical world, with $\varnothing.\textsc{Orig}$ set to the original value of the variable before the hypothetical execution, $\varnothing.\textsc{Hyp}$ set to the value of the variable after the hypothetical execution, and $\varnothing.\textsc{Curr}$ set to the value of the variable in the context of where $\texttt{commit}$ is being called. Immediately within the scope of a handler, the handled variable is set to $\varnothing$.
 
 \begin{prooftree}
-\AxiomC{$\config{c, \Sigma, \omega, \pi, \rho, \eta[op \mapsto (n, v, s_h)], \mu[(n, v) \mapsto s_m]} \Downarrow \config{\sigma', \omega'}$}
+\AxiomC{$\config{c, (\sigma[(n, v) \mapsto \varnothing], \Sigma), \omega, \pi, \rho, \eta[op \mapsto (n, v, s_h)], \mu[(n, v) \mapsto s_m]} \Downarrow \config{\sigma', \omega'}$}
+\AxiomC{$n \in \pi$}
 \RightLabel{$\textsc{Handle}$}
-\UnaryInfC{$\config{\handlecom{n}{v}{op}{s_h}{s_m}{c}, \Sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma', \omega'}$}
+\BinaryInfC{$\config{\handlecom{n}{v}{op}{s_h}{s_m}{c}, (\sigma, \Sigma), \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma', \omega'}$}
 \end{prooftree}
 
 \begin{prooftree}
 \AxiomC{$\eta(op) = (n, v, s_h)$}
 \AxiomC{$\config{s_h, \Sigma, \pi} \Downarrow s$}
-\AxiomC{$n \in \pi$}
 \RightLabel{$\textsc{Op}$}
-\TrinaryInfC{$\config{\opcom{op}, \Sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma[(n, v) \mapsto s], \omega}$}
+\BinaryInfC{$\config{\opcom{op}, \Sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma[(n, v) \mapsto s], \omega}$}
 \end{prooftree}
 
 \subsection{Hypothetical commands}
 
 \begin{prooftree}
-\AxiomC{$\config{c, (\sigma_\varnothing, \Sigma), \omega_\varnothing, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma', \omega'}$}
+\AxiomC{$\config{c, (\sigma_\varnothing, (\sigma, \Sigma)), \omega_\varnothing, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma', \omega'}$}
 \RightLabel{$\textsc{Hyp}$}
-\UnaryInfC{$\config{\hypcom{u}{c}, \Sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\dots, \omega[u \mapsto (\Sigma, \sigma)]}$}
+\UnaryInfC{$\config{\hypcom{u}{c}, (\sigma, \Sigma), \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma, \omega[u \mapsto ((\sigma, \Sigma), \sigma')]}$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{$\config{n.v, \Sigma_{orig}, \pi} \Downarrow s_o$}
+\AxiomC{$\config{n.v, (\sigma_{hyp}, \Sigma_{orig}), \pi} \Downarrow s_h$}
+\AxiomC{$\config{n.v, (\sigma_{curr}, \Sigma_{curr}), \pi} \Downarrow s_c$}
+\RightLabel{$\textsc{MergeStore}$}
+\TrinaryInfC{$\sigma_{merge} (\sigma_{curr}, \Sigma_{curr}, \Sigma_{orig}, vo, vh, vc)) = \sigma_{curr}[(n, vo) \mapsto s_o, (n, vh) \mapsto s_h, (n, vc) \mapsto s_c]$}
+\end{prooftree}
+
+
+\begin{prooftree}
+\AxiomC{$\omega(u) = (\Sigma_{\texttt{orig}}, \sigma_{\texttt{hyp}})$}
+\AxiomC{$\sigma' = \sigma[\forall (n, v, s) \in \sigma_{\texttt{hyp}} \land \config{\mu((n, v)), \sigma_{merge}(\sigma_{curr}, \Sigma_{orig}, \Sigma_{curr}, vo, vh, vc), \pi} \Downarrow s_m, (n, v) \mapsto s_m]$}
+\RightLabel{$\textsc{Commit}$}
+\BinaryInfC{$\config{\commitcom{u}, (\sigma_{curr}, \Sigma_{curr}), \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma', \omega}$}
 \end{prooftree}
 
 % proof that commits outside of "with" don't give any additional power that you shouldn't have
@@ -302,13 +318,6 @@ We describe handlers as a tuple of $(\synt{Node}, \synt{Var}, \synt{Op}, \synt{S
 % poof idea: hyp movement to commit + hyp noninterference
 
 % separate idea: mutually distrustful users that will only disclose if they both agree: 2-deep hyp execution (hyp without "with" internally)
-
-\begin{prooftree}
-\AxiomC{$\omega(u) = (\Sigma_{\texttt{orig}}, \sigma_{\texttt{hyp}})$}
-\AxiomC{$\forall (n, v, s) \in \sigma_{\texttt{hyp}}. \config{\mu((n, v)), \Sigma[], \pi} \Downarrow s_f \Rightarrow \sigma'((n, v)) = s_f$}
-\RightLabel{$\textsc{Commit}$}
-\BinaryInfC{$\config{\commitcom{u}, \Sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma', \omega}$}
-\end{prooftree}
 
 
 \end{document}
