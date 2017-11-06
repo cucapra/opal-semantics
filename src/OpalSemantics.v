@@ -62,12 +62,6 @@ Inductive com :=
 | Handle : node -> var -> op -> sexp -> sexp -> com -> com
 | Op     : op -> com.
 
-Definition append2 := append.
-Definition append3 (s1 s2 s3: string) : string :=
-  (append (append s1 s2) s3).
-Definition append4 (s1 s2 s3 s4: string) : string :=
-  (append (append s1 s2) (append s3 s4)).
-
 Definition var_store := StringPairMap.t sexp_value.
 Definition var_store_stack := list var_store.
 Definition world_store := world -> option (var_store_stack * var_store).
