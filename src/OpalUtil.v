@@ -38,26 +38,27 @@ Module String_as_OT <: UsualOrderedType.
   Lemma lt_not_eq : forall x y : t, string_lt x y -> ~ eq x y.
   Proof.
     intros x.
-    induction x ; destruct y ; crush.
-    edestruct Compare_dec.lt_eq_lt_dec; crush.
-    unfold eq in H0.
-    destruct s. crush.
+    induction x ; destruct y; unfold not ; intros; auto.
+    discriminate H0.
+    unfold string_lt in *.
+    fold string_lt in *.
+    edestruct Compare_dec.lt_eq_lt_dec; auto.
+    injection H0. intros.
+    destruct s. rewrite H2 in l. intuition.
     specialize IHx with y.
-    crush.
+    injection H0.
+    intros. eapply IHx; auto.
   Qed.
 
-  Definition compare x y : OrderedType.Compare string_lt eq x y.
+  Definition compare x : forall y, OrderedType.Compare string_lt eq x y.
   Proof.
-    generalize y.
-    clear y.
     induction x; intros.
     * destruct y.
-      - assert (eq "" "").
-        crush.
+      - assert (eq "" ""). reflexivity.
         constructor 2. auto.
-      - constructor 1. crush.
+      - constructor 1. unfold string_lt. auto.
     * destruct y.
-      - constructor 3. crush.
+      - constructor 3. unfold string_lt. auto.
       - remember (Ascii.nat_of_ascii a) as an.
         remember (Ascii.nat_of_ascii a0) as a0n.
         specialize Ascii.ascii_nat_embedding with a.
@@ -75,7 +76,7 @@ Module String_as_OT <: UsualOrderedType.
           | constructor 3 ] ;
           crush ;
           edestruct Compare_dec.lt_eq_lt_dec;
-          crush.
+          intuition.
   Qed.
 
   Definition eq_dec := string_dec.
