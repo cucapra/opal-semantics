@@ -1,86 +1,230 @@
-Require Import FMapList String OrderedTypeEx CpdtTactics.
+Require Import CpdtTactics.
 
-Fixpoint string_lt (l r: string) : Prop :=
-  match l, r with
-  | EmptyString, EmptyString => Logic.False
-  | EmptyString, _ => Logic.True
-  | String lh lr, String rh rr =>
-    match Compare_dec.lt_eq_lt_dec (Ascii.nat_of_ascii lh) (Ascii.nat_of_ascii rh) with
-    | inleft (left _) => Logic.True
-    | inleft (right _) => string_lt lr rr
-    | inright _ => Logic.False
-    end
-  | _, _ => Logic.False
-  end.
+Module Type SmallMap.
+  Parameter t : Type -> Type.
+  Parameter key : Type.
 
-Module String_as_OT <: UsualOrderedType.
-  Definition t := string.
+  Parameter empty : forall val: Type, t val.
 
-  Definition eq := @eq string.
-  Definition eq_refl := @eq_refl t.
-  Definition eq_sym := @eq_sym t.
-  Definition eq_trans := @eq_trans t.
+  Parameter get : forall (val: Type),
+      (t val) -> key -> val -> Prop.
 
-  Definition lt := string_lt.
+  Parameter set : forall (val: Type),
+      (t val) -> key -> val -> (t val) -> Prop.
 
-  Lemma lt_trans : forall x y z : t, string_lt x y -> string_lt y z -> string_lt x z.
+  Axiom set_assigns :
+    forall (vt: Type) k (v: vt) m m',
+    set vt m k v m' ->
+    get vt m' k v.
+
+  Axiom set_maintains :
+    forall vt k v m m',
+      set vt m k v m' ->
+      forall k' v',
+        k <> k' ->
+        get vt m k' v' ->
+        get vt m' k' v'.
+
+  Axiom set_conservative :
+    forall vt k v m m',
+    set vt m k v m' ->
+    forall k' v',
+      k <> k' ->
+      ~ get vt m k' v' ->
+      ~ get vt m' k' v'.
+End SmallMap.
+
+Module PairMap (L R: SmallMap) <: SmallMap.
+  Open Scope type.
+  Definition key := L.key * R.key.
+  Section Val.
+    Variable val : Type.
+
+    Definition t := L.t (R.t val).
+
+    Definition empty := L.empty (R.t val).
+
+    Inductive get' : t -> key -> val -> Prop :=
+    | Foo : forall (lt: t) (rt: R.t val)
+                   (lk: L.key)
+                   (rk: R.key) (v: val),
+        L.get (R.t val) lt lk rt ->
+        R.get val rt rk v ->
+        get' lt (lk,rk) v.
+
+    Definition get := get'.
+  End Val.
+End PairMap.
+
+Module Type UnDecType.
+  Parameter t : Type.
+End UnDecType.
+
+Module Type DecType.
+  Include UnDecType.
+  Axiom t_dec : forall (a1 a2: t), {a1 = a2} + {a1 <> a2}.
+End DecType.
+
+Module ListMap (K: DecType) <: SmallMap.
+  Open Scope list.
+  Open Scope type.
+  Definition key := K.t.
+  Section Val.
+    Variable val : Type.
+
+    Definition t := list (key * val).
+
+    Inductive get' : t -> key -> val -> Prop :=
+    | Head : forall t k v, get' ((k,v)::t) k v
+    | Rest : forall h t k v, get' t k v -> get' (h::t) k v.
+
+    Definition get := get'.
+
+    Hint Unfold get.
+    Hint Constructors get'.
+
+  Lemma get_in :
+    forall l k v,
+      get l k v <-> List.In (k,v) l.
   Proof.
-    intros x.
-    induction x; intros ; destruct z; destruct y; try solve [inversion H] ; auto.
-    specialize IHx with y z.
-    unfold string_lt in *.
-    fold string_lt in *.
-    do 3 (edestruct Compare_dec.lt_eq_lt_dec ;
-          try (destruct s, s0) ;
-          intuition).
+    split ;
+    induction l; intros ; inversion H; subst ;
+    crush ;
+    right ;
+    crush.
   Qed.
 
-  Lemma lt_not_eq : forall x y : t, string_lt x y -> ~ eq x y.
+  Fixpoint remove (k: key) (l: list (key*val)) : list (key*val) :=
+    match l with
+    | nil => nil
+    | (k',v)::t =>
+      if K.t_dec k k' then
+        remove k t
+      else
+        (k', v) :: (remove k t)
+    end.
+
+  Lemma remove_not_in :
+    forall l k v, ~get (remove k l) k v.
   Proof.
-    intros x.
-    induction x ; destruct y; unfold not ; intros; auto.
-    discriminate H0.
-    unfold string_lt in *.
-    fold string_lt in *.
-    edestruct Compare_dec.lt_eq_lt_dec; auto.
-    injection H0. intros.
-    destruct s. rewrite H2 in l. intuition.
-    specialize IHx with y.
-    injection H0.
-    intros. eapply IHx; auto.
+    induction l.
+    crush. inversion H.
+    intros.
+    crush.
+    inversion H.
+    * crush.
+      destruct a.
+      destruct (K.t_dec k k0).
+    - specialize (IHl k v H). auto.
+    - crush.
+      * crush.
+        destruct h, a.
+        destruct (K.t_dec k k1).
+    - specialize (IHl k v H). auto.
+    - specialize IHl with k v.
+      eapply IHl.
+      unfold get.
+      crush.
   Qed.
 
-  Definition compare x : forall y, OrderedType.Compare string_lt eq x y.
+
+  Inductive set' : t -> key -> val -> t -> Prop :=
+  | First : forall k v map,
+      (forall v, ~ List.In (k, v) map) ->
+      set' map k v ((k,v)::map)
+  | Replace :
+      forall k v v' map,
+        List.In (k, v') map ->
+        set' map k v ((k,v)::(remove k map)).
+
+  Definition set := set'.
+
+  Hint Unfold set.
+  Hint Constructors set'.
+
+  Theorem set_assigns :
+    forall k v m m',
+    set m k v m' ->
+    get m' k v.
   Proof.
-    induction x; intros.
-    * destruct y.
-      - assert (eq "" ""). reflexivity.
-        constructor 2. auto.
-      - constructor 1. unfold string_lt. auto.
-    * destruct y.
-      - constructor 3. unfold string_lt. auto.
-      - remember (Ascii.nat_of_ascii a) as an.
-        remember (Ascii.nat_of_ascii a0) as a0n.
-        specialize Ascii.ascii_nat_embedding with a.
-        specialize Ascii.ascii_nat_embedding with a0.
-        intros.
-        specialize IHx with y.
-        destruct Compare_dec.lt_eq_lt_dec with an a0n ;
-          try (destruct s) ;
-          inversion IHx;
-          [> constructor 1 ..
-          | constructor 2
-          | constructor 3
-          | constructor 3
-          | constructor 3
-          | constructor 3 ] ;
-          crush ;
-          edestruct Compare_dec.lt_eq_lt_dec;
-          intuition.
+    intros k v m.
+    generalize k, v.
+    clear k.
+    clear v.
+    induction m; intros ; inversion H ; crush.
   Qed.
 
-  Definition eq_dec := string_dec.
-End String_as_OT.
+  Lemma remove_maintains :
+    forall (l : list (key * val)) (k k' : key) (v: val),
+      k <> k' ->
+      List.In (k',v) l <-> List.In (k',v) (remove k l).
+  Proof.
+    split.
+    * induction l; intros ; inversion H0.
+    - subst.
+      unfold List.remove.
+      destruct (K.t_dec k k') eqn:?; crush.
+    - intuition.
+      destruct (K.t_dec k k') eqn:?.
+      + subst.
+        contradiction remove_not_in with l k' v.
+        crush.
+      + unfold remove in *.
+        destruct a.
+        destruct (K.t_dec k k0) eqn:?.
+        ** crush.
+        ** right.
+           auto.
+   * induction l ; intros.
+    - crush.
+    - crush.
+      destruct a.
+      edestruct (K.t_dec k k0) ; crush.
+  Qed.
 
-Module StringPair_OT := PairOrderedType String_as_OT String_as_OT.
-Module StringPairMap := FMapList.Make(StringPair_OT).
+  Theorem set_maintains :
+    forall k v m m',
+    set m k v m' ->
+    forall k' v',
+      k <> k' ->
+      get m k' v' ->
+      get m' k' v'.
+  Proof.
+    intros.
+    inversion H.
+    crush.
+    subst.
+    specialize @remove_maintains with m k k' v'.
+    intros.
+    intuition.
+    assert (List.In (k', v') m).
+    specialize get_in with m k' v'. crush.
+    intuition.
+    apply Rest.
+    specialize get_in with (remove k m) k' v'.
+    crush.
+  Qed.
+
+  Theorem set_conservative :
+    forall k v m m',
+    set m k v m' ->
+    forall k' v',
+      k <> k' ->
+      ~ get m k' v' ->
+      ~ get m' k' v'.
+  Proof.
+    intros.
+    inversion H; crush.
+    * inversion H7; crush.
+    * inversion H7; crush.
+      contradict H1.
+      specialize @remove_maintains with m k k' v'.
+      intros.
+      assert (List.In (k', v') (remove k m)).
+      inversion H7; crush.
+      specialize get_in with (remove k m) k' v'. crush.
+      intuition.
+      specialize get_in with m k' v'. crush.
+  Qed.
+  End Val.
+End ListMap.
