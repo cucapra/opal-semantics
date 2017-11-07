@@ -64,6 +64,21 @@ Module Type SmallMap.
       k <> k' ->
       get vt edv m' k' v' ->
       get vt edv m k' v'.
+
+  Parameter fold :
+    forall (val: Type) (edv : eq_dec val),
+    forall (A: Type) (f: A -> (key * val) -> A)
+           (init: A) (m: t val) (res: A), Prop.
+
+  Axiom fold_base :
+    forall vt edv A f init,
+      fold vt edv A f init (empty vt edv) init.
+
+  Axiom fold_extend :
+    forall vt edv A f init k v m m' res,
+      set vt edv m k v m' ->
+      fold vt edv A f init m' res ->
+      fold vt edv A f (f init (k,v)) m res.
 End SmallMap.
 
 Module PairMap (L R: SmallMap) <: SmallMap.
@@ -255,6 +270,40 @@ Module PairMap (L R: SmallMap) <: SmallMap.
         intuition.
     Qed.
 
+    Section Fold.
+      Variable A : Type.
+      Definition func := A -> (key * val) -> A.
+
+      Inductive fold' : func -> A -> t -> A -> Prop :=
+      | InitFold : forall f init, fold' f init empty init
+      | ConsFold :
+          forall f init res k v m m',
+            set m k v m' ->
+            fold' f init m' res ->
+            fold' f (f init (k,v)) m res.
+      Definition fold := fold'.
+
+      Theorem fold_base :
+        forall f init,
+          fold f init empty init.
+      Proof.
+        intros.
+        unfold fold. constructor.
+      Qed.
+
+      Theorem fold_extend :
+        forall f init k v m m' res,
+          set m k v m' ->
+          fold f init m' res ->
+          fold f (f init (k,v)) m res.
+      Proof.
+        intros.
+        unfold fold in *.
+        eapply ConsFold.
+        apply H.
+        apply H0.
+      Qed.
+    End Fold.
   End Val.
 End PairMap.
 
@@ -323,40 +372,9 @@ Module ListMap (K: DecType) <: SmallMap.
     forall edv l k v,
       get edv l k v -> List.In (k,v) l.
   Proof.
-(*    split.*)
     * induction l.
       - intros. inversion H.
       - intros. inversion H; crush.
-        (*
-  * induction l.
-      - intros. inversion H.
-      - intros.
-        crush.
-        destruct (eq_dec_key k k0) ; destruct (eq_dec_val v v0).
-        + crush.
-        + crush.
-        +
-          crush.
-          eapply Head.
-        inversion H.
-        + crush.
-        +
-    induction l.
-
-    split ;
-      induction l; intros ; inversion H; crush.
-
-    destruct (eq_dec_key a0 k).
-    * subst.
-    eapply Rest.
-    * crush.
-    right.
-    inversion H.
-    crush.
-
-    right
-    crush.
-*)
   Qed.
 
   Fixpoint remove (k: key) (l: list (key*val)) : list (key*val) :=
@@ -526,5 +544,40 @@ Module ListMap (K: DecType) <: SmallMap.
          specialize (get_remove eq_dec_val k' k v' m).
          intuition.
   Qed.
+
+    Section Fold.
+      Variable A : Type.
+      Definition func := A -> (key * val) -> A.
+
+      Inductive fold' : func -> A -> t -> A -> Prop :=
+      | InitFold : forall f init, fold' f init (empty eq_dec_val) init
+      | ConsFold :
+          forall f init res k v m m',
+            set eq_dec_val m k v m' ->
+            fold' f init m' res ->
+            fold' f (f init (k,v)) m res.
+      Definition fold := fold'.
+
+      Theorem fold_base :
+        forall f init,
+          fold f init (empty eq_dec_val) init.
+      Proof.
+        intros.
+        unfold fold. constructor.
+      Qed.
+
+      Theorem fold_extend :
+        forall f init k v m m' res,
+          set eq_dec_val m k v m' ->
+          fold f init m' res ->
+          fold f (f init (k,v)) m res.
+      Proof.
+        intros.
+        unfold fold in *.
+        eapply ConsFold.
+        apply H.
+        apply H0.
+      Qed.
+    End Fold.
   End Val.
 End ListMap.
