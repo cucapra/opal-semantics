@@ -8,6 +8,7 @@
 \usepackage{xspace}
 \usepackage{tikz}
 \usepackage{graphicx}
+\usepackage[landscape]{geometry}
 
 \title{Opal Semantics}
 \author{Alex Renda}
@@ -117,11 +118,11 @@ $\Omega$ : & $2^{\synt{World}}$ & Set of worlds in scope
 \AxiomC{$\Sigma \vdash b : \textsc{Bool}$}
 \AxiomC{$\Omega', \Pi, \Sigma, H \vdash c_1 : \Omega'$}
 \AxiomC{$\Omega', \Pi, \Sigma, H \vdash c_2 : \Omega''$}
-\TrinaryInfC{$\Omega, \Pi, \Sigma, H \vdash \ifcom{b}{c_1}{c_2} : \Omega$}
+\TrinaryInfC{$\Omega, \Pi, \Sigma, H \vdash \ifcom{b}{c_1}{c_2} : \Omega' \cap \Omega''$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\Omega, \Pi, \Sigma, H \vdash c : \Omega''$}
+\AxiomC{$\varnothing, \Pi, \Sigma, H \vdash c : \Omega'$}
 \UnaryInfC{$\Omega, \Pi, \Sigma, H \vdash \hypcom{u}{c} : \Omega \cup \{u\}$}
 \end{prooftree}
 
@@ -304,6 +305,14 @@ We describe handlers as a tuple of $(\synt{Node}, \synt{Var}, \synt{Op}, \synt{S
 \TrinaryInfC{$\sigma_{merge} (\sigma_{curr}, \Sigma_{curr}, \Sigma_{orig}, vo, vh, vc)) = \sigma_{curr}[(n, vo) \mapsto s_o, (n, vh) \mapsto s_h, (n, vc) \mapsto s_c]$}
 \end{prooftree}
 
+\begin{prooftree}
+\AxiomC{$\config{n.v, \Sigma_{orig}, \pi} \Downarrow s_o$}
+\AxiomC{$\config{n.v, (\sigma_{hyp}, \Sigma_{orig}), \pi} \Downarrow s_h$}
+\AxiomC{$\config{n.v, (\sigma_{curr}, \Sigma_{curr}), \pi} \Downarrow s_c$}
+\RightLabel{$\textsc{MergesTo}$}
+\TrinaryInfC{$\sigma_{merge} (\sigma_{curr}, \Sigma_{curr}, \Sigma_{orig}, vo, vh, vc)) = \sigma_{curr}[(n, vo) \mapsto s_o, (n, vh) \mapsto s_h, (n, vc) \mapsto s_c]$}
+\end{prooftree}
+
 
 \begin{prooftree}
 \AxiomC{$\omega(u) = (\Sigma_{\texttt{orig}}, \sigma_{\texttt{hyp}})$}
@@ -311,6 +320,123 @@ We describe handlers as a tuple of $(\synt{Node}, \synt{Var}, \synt{Op}, \synt{S
 \RightLabel{$\textsc{Commit}$}
 \BinaryInfC{$\config{\commitcom{u}, (\sigma_{curr}, \Sigma_{curr}), \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma', \omega}$}
 \end{prooftree}
+
+\subsection{Sexps}
+
+\begin{prooftree}
+\AxiomC{}
+\RightLabel{$\textsc{EmptySet}$}
+\UnaryInfC{$\config{\varnothing, \Sigma, \pi} \Downarrow \varnothing$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{$\config{s_1, \Sigma, \pi} \Downarrow {s_v}_1$}
+\AxiomC{$\config{s_2, \Sigma, \pi} \Downarrow {s_v}_2$}
+\RightLabel{$\textsc{Cons}$}
+\BinaryInfC{$\config{(s_1 . s_2), \Sigma, \pi} \Downarrow ({s_v}_1 . {s_v}_2)$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{$\Sigma(n,v) = s_v$}
+\RightLabel{$\textsc{Var}$}
+\UnaryInfC{$\config{n.v, \Sigma, \pi} \Downarrow s_v$}
+\end{prooftree}
+
+\subsection{Bools}
+\begin{prooftree}
+\AxiomC{}
+\RightLabel{$\textsc{True}$}
+\UnaryInfC{$\config{\true, \Sigma, \pi} \Downarrow \true$}
+\end{prooftree}
+\begin{prooftree}
+\AxiomC{}
+\RightLabel{$\textsc{False}$}
+\UnaryInfC{$\config{\false, \Sigma, \pi} \Downarrow \false$}
+\end{prooftree}
+
+\begin{prooftree}w
+\AxiomC{$\config{b_1, \Sigma, \pi} \Downarrow \true$}
+\AxiomC{$\config{b_2, \Sigma, \pi} \Downarrow \true$}
+\RightLabel{$\textsc{AndTrue}$}
+\BinaryInfC{$\config{b_1 \land b_2, \Sigma, \pi} \Downarrow \true$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{$\config{b_1, \Sigma, \pi} \Downarrow \false$}
+\RightLabel{$\textsc{AndFalseL}$}
+\UnaryInfC{$\config{b_1 \land b_2, \Sigma, \pi} \Downarrow \false$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{$\config{b_2, \Sigma, \pi} \Downarrow \false$}
+\RightLabel{$\textsc{AndFalseR}$}
+\UnaryInfC{$\config{b_1 \land b_2, \Sigma, \pi} \Downarrow \false$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{$\config{b_1, \Sigma, \pi} \Downarrow \false$}
+\AxiomC{$\config{b_2, \Sigma, \pi} \Downarrow \false$}
+\RightLabel{$\textsc{OrFalse}$}
+\BinaryInfC{$\config{b_1 \lor b_2, \Sigma, \pi} \Downarrow \false$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{$\config{b_1, \Sigma, \pi} \Downarrow \true$}
+\RightLabel{$\textsc{OrTrueL}$}
+\UnaryInfC{$\config{b_1 \lor b_2, \Sigma, \pi} \Downarrow \true$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{$\config{b_2, \Sigma, \pi} \Downarrow \true$}
+\RightLabel{$\textsc{OrTrueR}$}
+\UnaryInfC{$\config{b_1 \lor b_2, \Sigma, \pi} \Downarrow \true$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{$\config{s_1, \Sigma, \pi} \Downarrow \varnothing$}
+\AxiomC{$\config{s_2, \Sigma, \pi} \Downarrow \varnothing$}
+\RightLabel{$\textsc{EqTrue}$}
+\BinaryInfC{$\config{s_1 = s_2, \Sigma, \pi} \Downarrow \true$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{$\config{s_1, \Sigma, \pi} \Downarrow ({{s_v}_1}_1 . {{s_v}_1}_2)$}
+\AxiomC{$\config{s_2, \Sigma, \pi} \Downarrow \varnothing$}
+\RightLabel{$\textsc{EqFalseL}$}
+\BinaryInfC{$\config{s_1 = s_2, \Sigma, \pi} \Downarrow \false$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{$\config{s_1, \Sigma, \pi} \Downarrow \varnothing$}
+\AxiomC{$\config{s_2, \Sigma, \pi} \Downarrow ({{s_v}_2}_1 . {{s_v}_2}_2)$}
+\RightLabel{$\textsc{EqFalseR}$}
+\BinaryInfC{$\config{s_1 = s_2, \Sigma, \pi} \Downarrow \false$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{$\config{s_1, \Sigma, \pi} \Downarrow ({{s_v}_1}_1 . {{s_v}_1}_2)$}
+\AxiomC{$\config{s_2, \Sigma, \pi} \Downarrow ({{s_v}_2}_1 . {{s_v}_2}_2)$}
+\AxiomC{$\config{{{s_v}_1}_1 = {{s_v}_2}_1 \land {{s_v}_1}_2 = {{s_v}_2}_2, \Sigma, \pi} \Downarrow b$}
+\RightLabel{$\textsc{EqProp}$}
+\TrinaryInfC{$\config{s_1 = s_2, \Sigma, \pi} \Downarrow b$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{$\config{s_1, \Sigma, \pi} \Downarrow {s_v}_1$}
+\AxiomC{$\config{s_2, \Sigma, \pi} \Downarrow \varnothing$}
+\RightLabel{$\textsc{MemFalse}$}
+\BinaryInfC{$\config{s_1 \in s_2, \Sigma, \pi} \Downarrow \false$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{$\config{s_1, \Sigma, \pi} \Downarrow {s_v}_1$}
+\AxiomC{$\config{s_2, \Sigma, \pi} \Downarrow ({{s_v}_2}_1 . {{s_v}_2}_2)$}
+\AxiomC{$\config{{s_v}_1 = {{s_v}_2}_1 \lor {s_v}_1 \in {{s_v}_2}_2, \Sigma, \pi} \Downarrow b$}
+\RightLabel{$\textsc{MemProp}$}
+\TrinaryInfC{$\config{s_1 \in s_2, \Sigma, \pi} \Downarrow b$}
+\end{prooftree}
+
+Argument: \textsc{EqProp} and \textsc{MemProp} are well-founded proof trees since the sexp step is idempotent, and the two props decrease on size of sexp, so the maximum depth of the proof tree is proportional to the maximum depth of the sexp values
 
 % proof that commits outside of "with" don't give any additional power that you shouldn't have
 % proof of that is the fact that it's in a store in the first place
