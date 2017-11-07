@@ -7,143 +7,166 @@ Open Scope string_scope.
 Axiom proof_irrelevance :
   forall (P : Prop) (p q : P), p = q.
 
-Definition var := string.
-Definition node := string.
-Definition world := string.
-Definition op := string.
 
-Inductive sexp :=
-| EmptySet : sexp
-| Var      : node -> var -> sexp
-| Cons     : sexp -> sexp -> sexp.
+Module Opal (NodeMap VarMap WorldMap OpMap: SmallMap).
 
-Inductive sexp_is_value : sexp -> Prop :=
-| EmptySetIsValue : sexp_is_value EmptySet
-| ConsValuesIsValue : forall s1 s2,
-    sexp_is_value s1 -> sexp_is_value s2 -> sexp_is_value (Cons s1 s2).
-Hint Constructors sexp_is_value.
+  Module NodeVarMap := PairMap NodeMap VarMap.
 
-Definition is_sexp_value : forall s, {sexp_is_value s} + {~sexp_is_value s}.
-Proof.
-  intros.
-  induction s.
-  * left. auto.
-  * right. unfold not. intros. inversion H.
-  * destruct IHs1; destruct IHs2.
+  Definition node := NodeMap.key.
+  Definition var := VarMap.key.
+  Definition world := WorldMap.key.
+  Definition op := OpMap.key.
+
+  Inductive sexp :=
+  | EmptySet : sexp
+  | Var      : node -> var -> sexp
+  | Cons     : sexp -> sexp -> sexp.
+
+  Definition eq_dec_sexp : eq_dec sexp.
+  Proof.
+    unfold eq_dec.
+    specialize NodeMap.eq_dec_key.
+    specialize VarMap.eq_dec_key.
+    decide equality.
+  Qed.
+
+  Inductive sexp_is_value : sexp -> Prop :=
+  | EmptySetIsValue : sexp_is_value EmptySet
+  | ConsValuesIsValue : forall s1 s2,
+      sexp_is_value s1 -> sexp_is_value s2 -> sexp_is_value (Cons s1 s2).
+  Hint Constructors sexp_is_value.
+
+  Definition is_sexp_value : forall s, {sexp_is_value s} + {~sexp_is_value s}.
+  Proof.
+    intros.
+    induction s.
+    * left. auto.
+    * right. unfold not. intros. inversion H.
+    * destruct IHs1; destruct IHs2.
     - auto.
     - right. unfold not. intros. inversion H. contradiction H3.
     - right. unfold not. intros. inversion H. contradiction H2.
     - right. unfold not. intros. inversion H. contradiction H2.
+  Qed.
+
+  Definition sexp_value := {sexp | sexp_is_value sexp}.
+
+  Definition eq_dec_sexp_value : eq_dec sexp_value.
+  Proof.
+    unfold eq_dec.
+    intros.
+    destruct l, r.
+    destruct (eq_dec_sexp x x0).
+    * crush.
+      specialize (proof_irrelevance s s0).
+      crush.
+    * right. crush.
 Qed.
 
-Definition sexp_value := {sexp | sexp_is_value sexp}.
+  Inductive bool :=
+  | Eq    : sexp -> sexp -> bool
+  | Mem   : sexp -> sexp -> bool
+  | Conj  : bool -> bool -> bool
+  | Disj  : bool -> bool -> bool
+  | True  : bool
+  | False : bool.
 
-Inductive bool :=
-| Eq    : sexp -> sexp -> bool
-| Mem   : sexp -> sexp -> bool
-| Conj  : bool -> bool -> bool
-| Disj  : bool -> bool -> bool
-| True  : bool
-| False : bool.
+  Inductive bool_is_value : bool -> Prop :=
+  | TrueIsValue : bool_is_value True
+  | FalseIsValue : bool_is_value False.
 
-Inductive bool_is_value : bool -> Prop :=
-| TrueIsValue : bool_is_value True
-| FalseIsValue : bool_is_value False
-.
-Definition bool_value := { b: bool | bool_is_value b}.
+  Definition bool_value := { b: bool | bool_is_value b}.
 
-Inductive com :=
-| Skip   : com
-| Seq    : com -> com -> com
-| If     : bool -> com -> com -> com
-| With   : node -> com -> com
-| At     : node -> com -> com
-| Hyp    : world -> com -> com
-| Commit : world -> com
-| Handle : node -> var -> op -> sexp -> sexp -> com -> com
-| Op     : op -> com.
-
-Module Opal (NodeMap VarMap WorldMap: SmallMap).
-  Definition node := NodeMap.key.
-  Definition var := VarMap.key.
-  Definition world := WorldMap.key.
+  Inductive com :=
+  | Skip   : com
+  | Seq    : com -> com -> com
+  | If     : bool -> com -> com -> com
+  | With   : node -> com -> com
+  | At     : node -> com -> com
+  | Hyp    : world -> com -> com
+  | Commit : world -> com
+  | Handle : node -> var -> op -> sexp -> sexp -> com -> com
+  | Op     : op -> com.
 
 
-  Definition var_store :
-  Variable get_env : var_store -> node -> var -> sexp_value -> Prop.
-  Variable set_env : var_store -> node -> var -> sexp_value -> var_store -> Prop.
-  Variable set_env_assigns :
-    forall n v s store store',
-    set_env store n v s store' ->
-    get_env store' n v s.
-  Variable set_env_maintains :
-    forall n v s store store',
-    set_env store n v s store' ->
-    forall n' v' s',
-      n <> n' -> v <> v' ->
-      get_env store n' v' s' ->
-      get_env store' n' v' s'.
-  Variable set_env_conservative :
-    forall n v s store store',
-    set_env store n v s store' ->
-    forall n' v' s',
-      n <> n' -> v <> v' ->
-      ~ get_env store n' v' s' ->
-      ~ get_env store' n' v' s'.
+  Definition var_store := NodeVarMap.t sexp_value.
+
+  Definition get_env (vs: var_store) (n: node) (v: var) (sv: sexp_value) : Prop :=
+    NodeVarMap.get sexp_value eq_dec_sexp_value vs (n,v) sv.
+
+  Definition set_env (vs: var_store) (n: node) (v: var) (sv: sexp_value) (vs': var_store): Prop :=
+    NodeVarMap.set sexp_value eq_dec_sexp_value vs (n,v) sv vs'.
+
   Definition mem (env: var_store) (n: node) (v: var) : Prop :=
     forall env n v, exists s, get_env env n v s.
 
-  Variable fold_env : var_store ->
-                      forall acc, (acc -> sexp_value -> acc) -> acc -> acc.
-  Variable fold_base : forall env accT f acc,
-      (forall n v s, ~ get_env env n v s) ->
-      @fold_env env accT f acc = acc.
-  Variable fold_extend :
-    forall env env' accT f acc n v s,
-      ~ mem env n v ->
-      set_env env n v s env' ->
-      @fold_env env' accT f acc = f acc s.
+  Definition fold_env
+             (vs: var_store)
+             (A: Type)
+             (f: A -> sexp_value -> A)
+             (init: A)
+             (res: A) : Prop :=
+    let f' := fun acc kv => match kv with
+                            | (_, v) => f acc v
+                            end
+    in
+    (NodeVarMap.fold sexp_value eq_dec_sexp_value A f' init vs res).
 
-  Variable empty_var_store : var_store.
-  Variable empty_var_store_is_empty : forall n v s, ~ get_env empty_var_store n v s.
+  Definition empty_var_store : var_store :=
+    NodeVarMap.empty sexp_value eq_dec_sexp_value.
 
   Definition var_store_stack := list var_store.
 
-  Variable world_store : Type.
-  Variable get_world_store : world_store -> world -> var_store_stack -> var_store -> Prop.
-  Variable set_world_store : world_store -> world -> var_store_stack -> var_store -> world_store -> Prop.
-  Variable set_world_store_assigns :
-    forall u s1 s2 store store',
-    set_world_store store u s1 s2 store' ->
-    get_world_store store' u s1 s2.
-  Variable set_world_store_maintains :
-    forall u s1 s2 store store',
-    set_world_store store u s1 s2 store' ->
-    forall u' s1' s2',
-      u <> u' ->
-      get_world_store store u' s1' s2' ->
-      get_world_store store' u' s1' s2'.
-  Variable set_world_store_conservative :
-    forall u s1 s2 store store',
-    set_world_store store u s1 s2 store' ->
-    forall u' s1' s2',
-      u <> u' ->
-      ~ get_world_store store u' s1' s2' ->
-      ~ get_world_store store' u' s1' s2'.
+  Definition world_eq_dec : eq_dec (var_store_stack * var_store).
+  Proof.
+    unfold eq_dec.
+    specialize (NodeVarMap.eq_dec_t sexp_value eq_dec_sexp_value) as vseqdec.
+    specialize (List.list_eq_dec vseqdec).
+    decide equality.
+  Qed.
+
+  Definition world_store := WorldMap.t (var_store_stack * var_store).
+  Definition get_world_store ws w vss vs : Prop :=
+    WorldMap.get (var_store_stack * var_store) world_eq_dec ws w (vss,vs).
+  Definition set_world_store ws w vss vs ws': Prop :=
+    WorldMap.set (var_store_stack * var_store) world_eq_dec ws w (vss,vs) ws'.
+  Definition principals := set node.
+  Definition location := node.
+
+  Definition node_var_sexp_eq_dec : eq_dec (node * var * sexp).
+  Proof.
+    unfold eq_dec.
+    specialize eq_dec_sexp.
+    specialize NodeMap.eq_dec_key.
+    specialize VarMap.eq_dec_key.
+    intros.
+    destruct l, r.
+    destruct p, p0.
+    decide equality.
+    destruct a, p.
+    decide equality.
+  Qed.
+
+  Definition handlers := OpMap.t (node * var * sexp).
+  Definition get_handler hs op n v s : Prop :=
+    OpMap.get (node * var * sexp) node_var_sexp_eq_dec hs op (n,v,s).
+  Definition set_handler hs op n v s hs' : Prop :=
+    OpMap.set (node * var * sexp) node_var_sexp_eq_dec hs op (n,v,s) hs'.
 
 
-Definition principals := set node.
-Definition location := node.
-Definition handlers := op -> option (node * var * sexp).
-Definition mergers := node -> var -> option sexp.
+  Definition mergers := NodeVarMap.t sexp.
+  Definition get_merger m (n: node) (v: var) (s: sexp) : Prop :=
+    NodeVarMap.get sexp eq_dec_sexp m (n,v) s.
+  Definition set_merger m (n: node) (v: var) (s: sexp) m' : Prop :=
+    NodeVarMap.set sexp eq_dec_sexp m (n,v) s m'.
 
-Inductive error :=
-| GenericErr : string -> error
-| LookupErr  : node -> var -> error
-| ReadPermErr : node -> var -> principals -> error
-| WritePermErr : node -> var -> principals -> error
-| MergeErr : node -> var -> mergers -> error
-| HandleErr : op -> handlers -> error
-| BoolEvalErr : bool -> error
-| CommitErr : world -> world_store -> error
-.
+  Inductive error :=
+  | GenericErr : string -> error
+  | LookupErr  : node -> var -> error
+  | ReadPermErr : node -> var -> principals -> error
+  | WritePermErr : node -> var -> principals -> error
+  | MergeErr : node -> var -> mergers -> error
+  | HandleErr : op -> handlers -> error
+  | BoolEvalErr : bool -> error
+  | CommitErr : world -> world_store -> error.
+End Opal.
