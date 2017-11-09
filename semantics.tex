@@ -61,6 +61,7 @@ Tiny turing-incomplete language based on \imp with sexps:
 
 <Sexp> ::= $\varnothing$
 \alt <Node>.<Var>
+\alt <World>.<Node>.<Var>
 \alt ( <Sexp> . <Sexp> )
 
 <Bool> ::= <Sexp> = <Sexp>
@@ -87,10 +88,10 @@ Tiny turing-incomplete language based on \imp with sexps:
 Well-formedness conditions:
 \begin{itemize}
 \item all used operations are defined
-\item all node/var accesses are defined
+\item all node/var accesses are defined (i.e. within the scope of a handler; if they access a world, that world has been defined)
 \item all node accesses are permissioned
 \item all committed worlds are defined
-\item worlds are committed at most once (affine types)
+\item worlds are committed at most once
 \end{itemize}
 
 \subsection{Terminology}
@@ -102,6 +103,8 @@ $\Omega$ : & $2^{\synt{World}}$ & Set of worlds in scope
 \end{tabular}
 
 \subsection{Commands}
+
+Commands follow an affine typing scheme for worlds, wherein worlds can be used \textit{at most} once. This is achieved by a conservative judgement over commands: declaring a hypothetical world puts it into scope, committing it takes it out of scope, and if statements take the intersection of available worlds after each branch. Notably, worlds also cannot escape \texttt{handle} statements: since the behavior of committing (i.e. merging) is different inside and outside of a given handle, handles form a barrier across which worlds cannot cross.
 
 \begin{prooftree}
 \AxiomC{}
@@ -115,7 +118,7 @@ $\Omega$ : & $2^{\synt{World}}$ & Set of worlds in scope
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\Sigma \vdash b : \textsc{Bool}$}
+\AxiomC{$\Omega, \Omega, \Sigma \vdash b : \textsc{Bool}$}
 \AxiomC{$\Omega', \Pi, \Sigma, H \vdash c_1 : \Omega'$}
 \AxiomC{$\Omega', \Pi, \Sigma, H \vdash c_2 : \Omega''$}
 \TrinaryInfC{$\Omega, \Pi, \Sigma, H \vdash \ifcom{b}{c_1}{c_2} : \Omega' \cap \Omega''$}
@@ -158,54 +161,60 @@ $\Omega$ : & $2^{\synt{World}}$ & Set of worlds in scope
 
 \begin{prooftree}
 \AxiomC{}
-\UnaryInfC{$\Sigma \vdash \true : \textsc{Bool}$}
+\UnaryInfC{$\Omega, \Sigma \vdash \true : \textsc{Bool}$}
 \end{prooftree}
 
 \begin{prooftree}
 \AxiomC{}
-\UnaryInfC{$\Sigma \vdash \false : \textsc{Bool}$}
+\UnaryInfC{$\Omega, \Sigma \vdash \false : \textsc{Bool}$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\Sigma \vdash b_1 : \textsc{Bool}$}
-\AxiomC{$\Sigma \vdash b_2 : \textsc{Bool}$}
-\BinaryInfC{$\Sigma \vdash b_1 \land b_2 : \textsc{Bool}$}
+\AxiomC{$\Omega, \Sigma \vdash b_1 : \textsc{Bool}$}
+\AxiomC{$\Omega, \Sigma \vdash b_2 : \textsc{Bool}$}
+\BinaryInfC{$\Omega, \Sigma \vdash b_1 \land b_2 : \textsc{Bool}$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\Sigma \vdash b_1 : \textsc{Bool}$}
-\AxiomC{$\Sigma \vdash b_2 : \textsc{Bool}$}
-\BinaryInfC{$\Sigma \vdash b_1 \lor b_2 : \textsc{Bool}$}
+\AxiomC{$\Omega, \Sigma \vdash b_1 : \textsc{Bool}$}
+\AxiomC{$\Omega, \Sigma \vdash b_2 : \textsc{Bool}$}
+\BinaryInfC{$\Omega, \Sigma \vdash b_1 \lor b_2 : \textsc{Bool}$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\Sigma \vdash s_1 : \textsc{Sexp}$}
-\AxiomC{$\Sigma \vdash s_2 : \textsc{Sexp}$}
-\BinaryInfC{$\Sigma \vdash s_1 = s_2 : \textsc{Bool}$}
+\AxiomC{$\Omega, \Sigma \vdash s_1 : \textsc{Sexp}$}
+\AxiomC{$\Omega, \Sigma \vdash s_2 : \textsc{Sexp}$}
+\BinaryInfC{$\Omega, \Sigma \vdash s_1 = s_2 : \textsc{Bool}$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\Sigma \vdash s_1 : \textsc{Sexp}$}
-\AxiomC{$\Sigma \vdash s_2 : \textsc{Sexp}$}
-\BinaryInfC{$\Sigma \vdash s_1 \in s_2 : \textsc{Bool}$}
+\AxiomC{$\Omega, \Sigma \vdash s_1 : \textsc{Sexp}$}
+\AxiomC{$\Omega, \Sigma \vdash s_2 : \textsc{Sexp}$}
+\BinaryInfC{$\Omega, \Sigma \vdash s_1 \in s_2 : \textsc{Bool}$}
 \end{prooftree}
 
 \subsection{Sexps}
 
 \begin{prooftree}
 \AxiomC{}
-\UnaryInfC{$\Sigma \vdash \varnothing : \textsc{Sexp}$}
+\UnaryInfC{$\Omega, \Sigma \vdash \varnothing : \textsc{Sexp}$}
 \end{prooftree}
 
 \begin{prooftree}
 \AxiomC{$(n, v) \in \Sigma$}
-\UnaryInfC{$\Sigma \vdash n.v : \textsc{Sexp}$}
+\UnaryInfC{$\Omega, \Sigma \vdash n.v : \textsc{Sexp}$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\Sigma \vdash s_1 : \textsc{Sexp}$}
-\AxiomC{$\Sigma \vdash s_2 : \textsc{Sexp}$}
-\BinaryInfC{$\Sigma \vdash (s_1 . s_2) : \textsc{Sexp}$}
+\AxiomC{$(n, v) \in \Sigma$}
+\AxiomC{$u \in \Omega$}
+\BinaryInfC{$\Omega, \Sigma \vdash u.n.v : \textsc{Sexp}$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{$\Omega, \Sigma \vdash s_1 : \textsc{Sexp}$}
+\AxiomC{$\Omega, \Sigma \vdash s_2 : \textsc{Sexp}$}
+\BinaryInfC{$\Omega, \Sigma \vdash (s_1 . s_2) : \textsc{Sexp}$}
 \end{prooftree}
 
 
