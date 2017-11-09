@@ -21,7 +21,7 @@
 \newcommand{\atcom}[2]{\texttt{at}\ #1\ \texttt{do}\ \{#2\}}
 \newcommand{\hypcom}[2]{#1\ :=\ \texttt{hyp}\ \{#2\}}
 \newcommand{\commitcom}[1]{\texttt{commit}\ #1}
-\newcommand{\handlecom}[6]{\texttt{handle}\ #1.#2\ := \textit{#3}\ \texttt{with}\ #4\ \texttt{merge}\ #5\ \texttt{in}\ \{#6\}} % TODO: this should specify variables
+\newcommand{\handlecom}[9]{\texttt{handle}\ #1.#2\ := \textit{#3}\ \texttt{with}\ #4\ \texttt{merging}\ #5\ #6\ #7\ \texttt{to}\ #8\ \texttt{in}\ \{#9\}}
 \newcommand{\opcom}[1]{\textit{#1}}
 \newcommand{\bigcdot}{\raisebox{-0.75ex}{\scalebox{2}{$\cdot$}}}
 \newcommand{\partialfunc}{\rightharpoonup}
@@ -56,7 +56,7 @@ Tiny turing-incomplete language based on \imp with sexps:
 \alt \atcom{\synt{Node}}{\synt{Com}}
 \alt \hypcom{\synt{World}}{\synt{Com}}
 \alt \commitcom{\synt{World}}
-\alt \handlecom{\synt{Node}}{\synt{Var}}{\synt{Op}}{\synt{Sexp}}{\synt{Sexp}}{\synt{Com}}
+\alt \handlecom{\synt{Node}}{\synt{Var}}{\synt{Op}}{\synt{Sexp}}{\synt{Var}}{\synt{Var}}{\synt{Var}}{\synt{Sexp}}{\synt{Com}}
 \alt <Op>
 
 <Sexp> ::= $\varnothing$
@@ -133,10 +133,10 @@ $\Omega$ : & $2^{\synt{World}}$ & Set of worlds in scope
 
 \begin{prooftree}
 \AxiomC{$n \in \Pi$}
-\AxiomC{$\Sigma \vdash s_1 : \textsc{Sexp}$}
-\AxiomC{$\Sigma \vdash s_2 : \textsc{Sexp}$}
+\AxiomC{$\Sigma \cup \{(n, v)\} \vdash s_h : \textsc{Sexp}$}
+\AxiomC{$\Sigma \cup \{(n, v_o), (n, v_h), (n, v_c)\} \vdash s_m : \textsc{Sexp}$}
 \AxiomC{$\varnothing, \Pi, \Sigma \cup \{(n, v)\}, H \cup \{op\} \vdash c : \Omega'$}
-\QuaternaryInfC{$\Omega, \Pi, \Sigma, H \vdash \handlecom{n}{v}{op}{s_1}{s_2}{c} : \Omega$}
+\QuaternaryInfC{$\Omega, \Pi, \Sigma, H \vdash \handlecom{n}{v}{op}{s_h}{v_o}{v_h}{v_c}{s_m}{c} : \Omega$}
 \end{prooftree}
 
 \begin{prooftree}
@@ -219,7 +219,7 @@ $\omega$ : & $\synt{World} \partialfunc (\Sigma \times \sigma)$ & function repre
 $\pi$ : & $2^{\synt{Node}}$ & current authorized set of principals \\\\
 $\rho$ : & $\synt{Node}$ & current execution location \\\\
 $\eta$ : & $\synt{Op} \partialfunc (\synt{Node} \times \synt{Var} \times \synt{Sexp})$ & mapping of handlers to their destinations and expressions \\\\
-$\mu$ : & $(\synt{Node} \times \synt{Var}) \partialfunc \synt{Sexp}$ & mapping of handler results to their merge expressions \\\\
+$\mu$ : & $(\synt{Node} \times \synt{Var}) \partialfunc (\synt{Var} \times \synt{Var} \times \synt{Var} \times \synt{Sexp})$ & mapping of handler results to their merge expressions \\\\
 $\Downarrow_{\synt{Com}}$ : & $(\synt{Com} \times \Sigma \times \omega \times \pi \times \rho \times \eta \times \mu) \partialfunc (\sigma \times \omega)$  & Commands step to a new top-level store and new set of hypothetical worlds\\\\
 $\Downarrow_{\synt{Sexp}}$ : & $(\synt{Sexp} \times \Sigma \times \pi) \partialfunc \synt{SexpValue}$ & Sexps step to a value, or nothing if it cannot be evaluated due to undefined variables or lack of permission \\\\
 $\Downarrow_{\synt{Bool}}$ : & $(\synt{Bool} \times \Sigma \times \pi) \partialfunc \synt{BoolValue}$ & Bools step to a value, or nothing if it cannot be evaluated due to undefined variables or lack of permission \\\\
@@ -269,24 +269,24 @@ In this semantics, \textsc{At} is effectively a noop/passthrough, resulting in b
 \AxiomC{$\config{n, \rho, c}\ \checkmark$}
 \AxiomC{$\config{c, \Sigma, \omega, \pi \cup \{n\}, \rho, \eta, \mu} \Downarrow \config{\sigma', \omega'}$}
 \RightLabel{$\textsc{With}$}
-\BinaryInfC{$\config{\atcom{n}{c}, \Sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma', \omega'}$}
+\BinaryInfC{$\config{\withcom{n}{c}, \Sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma', \omega'}$}
 \end{prooftree}
 
 \subsection{Handler commands}
 We describe handlers as a tuple of $(\synt{Node}, \synt{Var}, \synt{Op}, \synt{Sexp}_h, \synt{Sexp}_m, \synt{Com})$, where $\synt{Node}$ is the node to write results to, $\synt{Var}$ is the variable on that node to write results to, $\synt{Op}$ is the name of the handler, $\synt{Sexp}_h$ is a sexp that gets lazily evaluated with its results written to $\synt{Node}.\synt{Var}$ each time $\synt{Op}$ is called, and $\synt{Sexp}_m$ is a sexp that gets lazily evaluated upon merge conflicts within a variable upon \texttt{commit}ing a hypothetical world, with $\varnothing.\textsc{Orig}$ set to the original value of the variable before the hypothetical execution, $\varnothing.\textsc{Hyp}$ set to the value of the variable after the hypothetical execution, and $\varnothing.\textsc{Curr}$ set to the value of the variable in the context of where $\texttt{commit}$ is being called. Immediately within the scope of a handler, the handled variable is set to $\varnothing$.
 
 \begin{prooftree}
-\AxiomC{$\config{c, (\sigma[(n, v) \mapsto \varnothing], \Sigma), \omega, \pi, \rho, \eta[op \mapsto (n, v, s_h)], \mu[(n, v) \mapsto s_m]} \Downarrow \config{\sigma', \omega'}$}
+\AxiomC{$\config{c, (\sigma[(n, v) \mapsto \varnothing], \Sigma), \omega, \pi, \rho, \eta[op \mapsto (n, v, s_h)], \mu[(n, v) \mapsto (v_i, v_h, v_c, s_m)]} \Downarrow \config{\sigma', \omega'}$}
 \AxiomC{$n \in \pi$}
 \RightLabel{$\textsc{Handle}$}
-\BinaryInfC{$\config{\handlecom{n}{v}{op}{s_h}{s_m}{c}, (\sigma, \Sigma), \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma', \omega'}$}
+\BinaryInfC{$\config{\handlecom{n}{v}{op}{s_h}{v_o}{v_h}{v_c}{s_m}{c}, (\sigma, \Sigma), \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma', \omega'}$}
 \end{prooftree}
 
 \begin{prooftree}
 \AxiomC{$\eta(op) = (n, v, s_h)$}
-\AxiomC{$\config{s_h, \Sigma, \pi} \Downarrow s$}
+\AxiomC{$\config{s_h, (\sigma, \Sigma), \pi} \Downarrow s$}
 \RightLabel{$\textsc{Op}$}
-\BinaryInfC{$\config{\opcom{op}, \Sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma[(n, v) \mapsto s], \omega}$}
+\BinaryInfC{$\config{\opcom{op}, (\sigma, \Sigma), \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma[(n, v) \mapsto s], \omega}$}
 \end{prooftree}
 
 \subsection{Hypothetical commands}
@@ -302,23 +302,24 @@ We describe handlers as a tuple of $(\synt{Node}, \synt{Var}, \synt{Op}, \synt{S
 \AxiomC{$\config{n.v, (\sigma_{hyp}, \Sigma_{orig}), \pi} \Downarrow s_h$}
 \AxiomC{$\config{n.v, (\sigma_{curr}, \Sigma_{curr}), \pi} \Downarrow s_c$}
 \RightLabel{$\textsc{MergeStore}$}
-\TrinaryInfC{$\sigma_{merge} (\sigma_{curr}, \Sigma_{curr}, \Sigma_{orig}, vo, vh, vc)) = \sigma_{curr}[(n, vo) \mapsto s_o, (n, vh) \mapsto s_h, (n, vc) \mapsto s_c]$}
+\TrinaryInfC{$\sigma_{merge} = [(n, vo) \mapsto s_o, (n, vh) \mapsto s_h, (n, vc) \mapsto s_c]$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\config{n.v, \Sigma_{orig}, \pi} \Downarrow s_o$}
-\AxiomC{$\config{n.v, (\sigma_{hyp}, \Sigma_{orig}), \pi} \Downarrow s_h$}
-\AxiomC{$\config{n.v, (\sigma_{curr}, \Sigma_{curr}), \pi} \Downarrow s_c$}
+\AxiomC{$\mu((n,v)) = s_m v_o, v_h, v_c$}
+\AxiomC{\textsc{MergeStore}}
+\AxiomC{$\config{s_m, (\sigma_{merge}, (\sigma_{curr}, \Sigma_{curr})), \pi} \Downarrow v_m$}
 \RightLabel{$\textsc{MergesTo}$}
-\TrinaryInfC{$\sigma_{merge} (\sigma_{curr}, \Sigma_{curr}, \Sigma_{orig}, vo, vh, vc)) = \sigma_{curr}[(n, vo) \mapsto s_o, (n, vh) \mapsto s_h, (n, vc) \mapsto s_c]$}
+\TrinaryInfC{$\sigma'[(n,v) \mapsto v_m]$}
 \end{prooftree}
 
 
 \begin{prooftree}
 \AxiomC{$\omega(u) = (\Sigma_{\texttt{orig}}, \sigma_{\texttt{hyp}})$}
-\AxiomC{$\sigma' = \sigma[\forall (n, v, s) \in \sigma_{\texttt{hyp}} \land \config{\mu((n, v)), \sigma_{merge}(\sigma_{curr}, \Sigma_{orig}, \Sigma_{curr}, vo, vh, vc), \pi} \Downarrow s_m, (n, v) \mapsto s_m]$}
+\AxiomC{$\forall (n, v, s) \in \sigma_{\texttt{hyp}}, \textsc{MergesTo}$}
+\AxiomC{$\forall (n, v), \neg \exists s . (n, v, s) \in \sigma_{\texttt{hyp}} \Rightarrow \neg \exists s . (n, v, s) \in \sigma'$}
 \RightLabel{$\textsc{Commit}$}
-\BinaryInfC{$\config{\commitcom{u}, (\sigma_{curr}, \Sigma_{curr}), \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma', \omega}$}
+\TrinaryInfC{$\config{\commitcom{u}, (\sigma_{curr}, \Sigma_{curr}), \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma', \omega}$}
 \end{prooftree}
 
 \subsection{Sexps}
