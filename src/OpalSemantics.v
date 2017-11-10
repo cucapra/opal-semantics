@@ -1,8 +1,6 @@
-Require Import String ListSet CpdtTactics Wf String.
-Require Import OpalSrc.OpalUtil.
+Require Import ListSet CpdtTactics FSetAVL FMapAVL OrderedType.
 
 Set Implicit Arguments.
-Open Scope string_scope.
 
 Axiom proof_irrelevance :
   forall (P : Prop) (p q : P), p = q.
@@ -12,23 +10,114 @@ Definition eq_dec_pair {A: Type} (eq_dec : forall (a1 a2: A), {a1 = a2} + {a1 <>
 Proof.
   decide equality.
 Qed.
-
 Hint Resolve eq_dec_pair.
 
-Module Opal (NodeMap VarMap WorldVarMap OpMap: SmallMap).
+Module OrderedPair(L R: OrderedType) <: OrderedType.
+  Module LFacts := OrderedTypeFacts(L).
+  Module RFacts := OrderedTypeFacts(R).
 
-  Module NodeVarMap := PairMap NodeMap VarMap.
+  Definition t := (L.t * R.t) % type.
 
-  Definition node := NodeMap.key.
-  Definition node_eq_dec := NodeMap.eq_dec_key.
+  Inductive eq' : t -> t -> Prop :=
+  | LeftRightEq : forall ll lr rl rr,
+      L.eq ll rl ->
+      R.eq lr rr ->
+      eq' (ll, lr) (rl, rr).
+  Definition eq := eq'.
+
+  Inductive lt' : t -> t -> Prop :=
+  | LeftLt : forall ll lr rl rr,
+      L.lt ll rl ->
+      lt' (ll, lr) (rl, rr)
+  | RightLt : forall ll lr rl rr,
+      L.eq ll rl ->
+      R.lt lr rr ->
+      lt' (ll, lr) (rl, rr).
+  Definition lt := lt'.
+
+  Theorem eq_refl : forall x, eq x x.
+  Proof.
+    unfold eq.
+    specialize L.eq_refl.
+    specialize R.eq_refl.
+    intros.
+    destruct x.
+    constructor; auto.
+  Qed.
+
+  Theorem eq_sym : forall x y, eq x y -> eq y x.
+  Proof.
+    intros. unfold eq in *. inversion H. constructor; auto.
+  Qed.
+
+  Theorem eq_trans : forall x y z, eq x y -> eq y z -> eq x z.
+  Proof.
+    destruct x, y, z.
+    intros. unfold eq in *. inversion H. inversion H0.
+    specialize (L.eq_trans H4 H10).
+    specialize (R.eq_trans H6 H12).
+    constructor; auto.
+  Qed.
+
+  Theorem lt_trans : forall x y z, lt x y -> lt y z -> lt x z.
+    destruct x, y, z.
+    intros. unfold lt in *.
+    inversion H; inversion H0 ; subst.
+    * specialize (L.lt_trans H2 H7). intros. constructor. auto.
+    * specialize (LFacts.lt_eq H2 H9). intros. constructor. auto.
+    * specialize (LFacts.eq_lt H4 H8). intros. constructor. auto.
+    * constructor 2.
+      - specialize (L.eq_trans H4 H10). intuition.
+      - specialize (R.lt_trans H6 H12). intuition.
+  Qed.
+
+  Theorem lt_not_eq : forall x y, lt x y -> ~ eq x y.
+  Proof.
+    intros.
+    destruct x,y.
+    unfold not. intros. unfold eq in *. unfold lt in *. inversion H0.
+    inversion H; subst.
+    * specialize (L.lt_not_eq H8 H4). auto.
+    * specialize (R.lt_not_eq H12 H6). auto.
+  Qed.
+
+  Theorem compare : forall x y, Compare lt eq x y.
+  Proof.
+    destruct x, y.
+    destruct (L.compare t0 t2).
+    * constructor 1. constructor. auto.
+    * destruct (R.compare t1 t3).
+      - constructor 1. constructor 2; auto.
+      - constructor 2. constructor; auto.
+      - constructor 3. constructor 2; auto.
+    * constructor 3. constructor. auto.
+  Qed.
+
+  Theorem eq_dec : forall x y, {eq x y} + {~ eq x y}.
+  Proof.
+    destruct x, y.
+    destruct (L.eq_dec t0 t2).
+    * destruct (R.eq_dec t1 t3).
+      - left. constructor; auto.
+      - right. intuition. inversion H. intuition.
+    * right. intuition. inversion H. intuition.
+  Qed.
+End OrderedPair.
+
+Module Opal (NodeType VarType WorldVarType OpType: OrderedType).
+  Module NodeVarType := OrderedPair(NodeType)(VarType).
+
+  Module NodeMap := FMapAVL.Make(NodeType).
+  Module NodeSet := FSetAVL.Make(NodeType).
+  Module VarMap := FMapAVL.Make(VarType).
+  Module NodeVarMap := FMapAVL.Make(NodeVarType).
+  Module WorldVarMap := FMapAVL.Make(WorldVarType).
+  Module OpMap := FMapAVL.Make(OpType).
+
+  Definition node := NodeType.t.
   Definition var := VarMap.key.
-  Definition var_eq_dec := VarMap.eq_dec_key.
   Definition worldvar := WorldVarMap.key.
-  Definition worldvar_eq_dec := WorldVarMap.eq_dec_key.
   Definition op := OpMap.key.
-  Definition op_eq_dec := OpMap.eq_dec_key.
-
-  Hint Resolve node_eq_dec var_eq_dec worldvar_eq_dec op_eq_dec.
 
   Inductive com :=
   | SkipCom : com
@@ -60,86 +149,93 @@ Module Opal (NodeMap VarMap WorldVarMap OpMap: SmallMap).
   | HypWorld : com -> world
   .
 
-  Fixpoint com_eq_dec (c1 c2 : com) : {c1 = c2} + {c1 <> c2}
-  with bool_eq_dec (b1 b2 : bool) : {b1 = b2} + {b1 <> b2}
-  with sexp_eq_dec (s1 s2 : sexp) : {s1 = s2} + {s1 <> s2}
-  with world_eq_dec (w1 w2 : world) : {w1 = w2} + {w1 <> w2}
-  .
-  Proof.
-    decide equality.
-    decide equality.
-    decide equality.
-    decide equality.
-  Qed.
-
-  Hint Resolve com_eq_dec bool_eq_dec sexp_eq_dec world_eq_dec.
-
   Section Evaluation.
     Definition sigma_t := NodeVarMap.t sexp.
-    Definition sigma_0 : sigma_t := NodeVarMap.empty sexp sexp_eq_dec.
-    Definition sigma_eq_dec : forall s1 s2 : sigma_t, {s1 = s2} + {s1 <> s2} :=
-      NodeVarMap.eq_dec_t sexp sexp_eq_dec.
+    Definition sigma_0 : sigma_t := NodeVarMap.empty sexp.
 
-    Definition sigma_get (sigma: sigma_t) (n: node) (v: var) (s: sexp) : Prop :=
-      NodeVarMap.get sexp sexp_eq_dec sigma (n,v) s.
-    Definition sigma_set (sigma: sigma_t) (n: node) (v: var) (s: sexp) (sigma': sigma_t) : Prop :=
-      NodeVarMap.set sexp sexp_eq_dec sigma (n,v) s sigma'.
-    Definition sigma_fold {A: Type}
-               (sigma: sigma_t)
-               (f: A -> ((node*var) * sexp) -> A)
-               (init: A)
-               (res: A) : Prop :=
-      NodeVarMap.fold sexp sexp_eq_dec A f init sigma res.
+    Definition sigma_get (sigma: sigma_t) (n: node) (v: var) : option sexp :=
+      NodeVarMap.find (n,v) sigma.
+    Definition sigma_set (sigma: sigma_t) (n: node) (v: var) (s: sexp) (sigma': sigma_t) : sigma_t :=
+      NodeVarMap.add (n,v) s sigma.
 
     Definition Sigma_t := list sigma_t.
-    Inductive Sigma_get : Sigma_t -> node -> var -> sexp -> Prop :=
-    | HeadGet :
-        forall sigma Sigma n v s,
-          sigma_get sigma n v s ->
-          Sigma_get (cons sigma Sigma) n v s
-    | TailGet :
-        forall sigma Sigma n v s,
-          Sigma_get Sigma n v s ->
-          Sigma_get (cons sigma Sigma) n v s
-    .
+    Fixpoint Sigma_get (Sigma: Sigma_t) (n: node) (v: var) : option sexp :=
+      match Sigma with
+      | nil => None
+      | (cons sigma Sigma) =>
+        match sigma_get sigma n v with
+        | Some s => Some s
+        | None => Sigma_get Sigma n v
+        end
+      end.
 
     Definition omega_t := WorldVarMap.t (sigma_t * sigma_t).
-    Definition omega_0 : omega_t := WorldVarMap.empty (sigma_t * sigma_t) (eq_dec_pair sigma_eq_dec).
-    Definition omega_get (omega: omega_t) (u: worldvar) (sig_orig sig_hyp: sigma_t) : Prop :=
-      WorldVarMap.get (sigma_t * sigma_t) (eq_dec_pair sigma_eq_dec) omega u (sig_orig, sig_hyp).
-    Definition omega_set (omega: omega_t) (u: worldvar) (sig_orig sig_hyp: sigma_t) (omega': omega_t) : Prop :=
-      WorldVarMap.set (sigma_t * sigma_t) (eq_dec_pair sigma_eq_dec) omega u (sig_orig, sig_hyp) omega'.
+    Definition omega_0 : omega_t := WorldVarMap.empty (sigma_t * sigma_t).
+    Definition omega_get (omega: omega_t) (u: worldvar) : option (sigma_t * sigma_t) :=
+      WorldVarMap.find u omega.
+    Definition omega_set (omega: omega_t) (u: worldvar) (sig_orig sig_hyp: sigma_t) : omega_t :=
+      WorldVarMap.add u (sig_orig, sig_hyp) omega.
 
-    Definition pi_t := set node.
+    Definition pi_t := NodeSet.t.
+    Definition pi_mem (n: node) (pi: pi_t) : Datatypes.bool :=
+      NodeSet.mem n pi.
+
     Definition rho_t := node.
+
     Definition eta_t := OpMap.t (node * var * sexp).
-    Definition eta_map_val_eq_dec : forall (v1 v2 : node * var * sexp),
-        {v1=v2} + {v1<>v2}.
-    Proof.
-      intros.
-      decide equality.
-       destruct a, p.
-      decide equality.
-    Qed.
-    Definition eta_get (eta: eta_t) (op: op) (n: node) (v: var) (sh: sexp) : Prop :=
-      OpMap.get (node * var * sexp) eta_map_val_eq_dec eta op (n,v,sh).
-    Definition eta_set (eta: eta_t) (op: op) (n: node) (v: var) (sh: sexp) (eta': eta_t) : Prop :=
-      OpMap.set (node * var * sexp) eta_map_val_eq_dec eta op (n,v,sh) eta'.
+    Definition eta_get (eta: eta_t) (op: op) (n: node) (v: var) : option (node * var * sexp) :=
+      OpMap.find op eta.
+    Definition eta_set (eta: eta_t) (op: op) (n: node) (v: var) (sh: sexp) : eta_t :=
+      OpMap.add op (n,v,sh) eta.
 
     Definition mu_t := NodeVarMap.t (var * var * var * sexp).
-    Definition mu_map_val_eq_dec : forall (v1 v2 : var * var * var * sexp),
-        {v1=v2} + {v1<>v2}.
-    Proof.
-      intros.
-      decide equality.
-       destruct a, p.
-      decide equality.
-    Qed.
+    Definition mu_get (mu: mu_t) (n: node) (v: var) : option (var * var * var * sexp) :=
+      NodeVarMap.find (n,v) mu.
+    Definition mu_set (mu: mu_t) (n: node) (v vo vh vc: var) (sm: sexp) : mu_t:=
+      NodeVarMap.add(n,v) (vo,vh,vc,sm) mu.
 
-    Definition mu_get (mu: mu_t) (n: node) (v vo vh vc: var) (sm: sexp) : Prop :=
-      NodeVarMap.get (var * var * var * sexp) mu_map_val_eq_dec mu (n,v) (vo,vh,vc,sm).
-    Definition mu_set (mu: mu_t) (n: node) (v vo vh vc: var) (sm: sexp) (mu': mu_t) : Prop :=
-      NodeVarMap.set (var * var * var * sexp) mu_map_val_eq_dec mu (n,v) (vo,vh,vc,sm) mu'.
+    Fixpoint eval_sexp (s: sexp) (Sigma: Sigma_t) (omega: omega_t) (pi: pi_t) (rho: rho_t) (eta: eta_t) (mu: mu_t) : option sexp :=
+      match s with
+      | EmptySexp => Some EmptySexp
+      | VarSexp n v =>
+        if pi_mem n pi then
+          Sigma_get Sigma n v
+        else
+          None
+      | WeightSexp w n v =>
+        match eval_world w Sigma omega pi rho eta mu with
+        | Some (sigma_orig, sigma_hyp) =>
+          sigma_get sigma_hyp n v
+        | None =>
+          None
+        end
+    | ConsSexp s1 s2 =>
+      match eval_sexp s1 Sigma omega pi rho eta mu,
+            eval_sexp s2 Sigma omega pi rho eta mu with
+      | Some s1v, Some s2v =>
+        Some (ConsSexp s1v s2v)
+      | _, _ => None
+      end
+      end
+    with
+    eval_bool (b: bool) (Sigma: Sigma_t) (omega: omega_t) (pi: pi_t) (rho: rho_t) (eta: eta_t) (mu: mu_t) : option bool :=
+      match b with
+      | _ =>
+        None
+      end
+    with
+    eval_com (c: com) (Sigma: Sigma_t) (omega: omega_t) (pi: pi_t) (rho: rho_t) (eta: eta_t) (mu: mu_t) : option (sigma_t * omega_t) :=
+      match c with
+      | _ =>
+        None
+      end
+    with
+    eval_world (w: world) (Sigma: Sigma_t) (omega: omega_t) (pi: pi_t) (rho: rho_t) (eta: eta_t) (mu: mu_t) : option (sigma_t * sigma_t) :=
+      match w with
+      | _ =>
+        None
+      end
+    .
 
     Inductive eval_sexp : sexp -> Sigma_t -> omega_t -> pi_t -> rho_t -> eta_t -> mu_t -> sexp -> Prop :=
     | EmptyEval : forall Sigma omega pi rho eta mu,
