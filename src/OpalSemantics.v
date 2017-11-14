@@ -1,92 +1,19 @@
-Require Import CpdtTactics Orders MSetAVL FMapAVL MSets Setoid Morphisms.
+Require Import CpdtTactics Structures.OrderedType Structures.OrderedTypeEx FMapAVL MSets Setoid Morphisms.
 
 Set Implicit Arguments.
 
 Axiom proof_irrelevance :
   forall (P : Prop) (p q : P), p = q.
 
-Definition eq_dec_pair {A: Type} (eq_dec : forall (a1 a2: A), {a1 = a2} + {a1 <> a2})
-  : forall (aa1 aa2: A*A), {aa1 = aa2} + {aa1 <> aa2}.
-Proof.
-  decide equality.
-Qed.
-Hint Resolve eq_dec_pair.
+Print Module Type UsualOrderedType.
 
-Module OrderedTypeOld(T: Orders.OrderedType) <: Structures.OrderedType.OrderedType.
-  Definition t := T.t.
-  Definition eq := T.eq.
-  Definition lt := T.lt.
+Module Opal (NodeType VarType WorldVarType OpType: OrderedTypeEx.UsualOrderedType).
+  Module NodeVarType := OrderedTypeEx.PairOrderedType(NodeType)(VarType).
 
-  Theorem eq_refl : forall x : t, eq x x.
-  Proof.
-    specialize T.eq_equiv. crush.
-  Qed.
-
-  Theorem eq_sym : forall x y : t, eq x y -> eq y x.
-    Proof.
-      specialize T.eq_equiv. crush.
-    Qed.
-
-  Theorem eq_trans : forall x y z : t, eq x y -> eq y z -> eq x z.
-    Proof.
-      specialize T.eq_equiv. crush.
-    Qed.
-
-    Theorem lt_trans : forall x y z : t, lt x y -> lt y z -> lt x z.
-    Proof.
-      specialize T.lt_strorder.
-      intros.
-      unfold lt in *.
-      destruct H.
-      eapply StrictOrder_Transitive. apply H0. apply H1.
-    Qed.
-
-    Theorem lt_not_eq : forall x y : t, lt x y -> ~ eq x y.
-    Proof.
-      specialize T.eq_equiv.
-      specialize T.lt_strorder.
-      intros.
-      unfold lt in *.
-      destruct H, H0.
-      unfold not. intros.
-      specialize (T.lt_compat H (Equivalence_Reflexive y)).
-      crush.
-      eapply StrictOrder_Irreflexive. apply H0.
-    Qed.
-
-    Print Module Type OrderedType.
-
-    Definition compare : forall x y : t, Structures.OrderedType.Compare lt eq x y.
-    Proof.
-      intros.
-      specialize (T.compare_spec x y).
-      destruct (T.compare x y) ; intros.
-      * constructor 2.
-        inversion H. auto.
-      * constructor 1.
-        inversion H. auto.
-      * constructor 3.
-        inversion H. auto.
-    Qed.
-
-    Definition eq_dec := T.eq_dec.
-End OrderedTypeOld.
-
-Module Opal (NodeType VarType WorldVarType OpType: OrderedType).
-  Module NodeVarType := PairOrderedType(NodeType)(VarType).
-
-  Module NodeVarType' := OrderedTypeOld(NodeVarType).
-  Module WorldVarType' := OrderedTypeOld(WorldVarType).
-  Module OpType' := OrderedTypeOld(OpType).
-
-  Module NodeSet := MSetAVL.Make(NodeType).
-  Module NodeVarMap := FMapAVL.Make(NodeVarType').
-  Module NodeVarSet := MSetAVL.Make(NodeVarType).
-  Module NodeVarProps := MSetProperties.Properties NodeVarSet.
-  Module WorldVarMap := FMapAVL.Make(WorldVarType').
-  Module WorldVarSet := MSetAVL.Make(WorldVarType).
-  Module OpMap := FMapAVL.Make(OpType').
-  Module OpSet := MSetAVL.Make(OpType).
+  Module NodeMap := FMapAVL.Make(NodeType).
+  Module NodeVarMap := FMapAVL.Make(NodeVarType).
+  Module WorldVarMap := FMapAVL.Make(WorldVarType).
+  Module OpMap := FMapAVL.Make(OpType).
 
   Definition node := NodeType.t.
   Definition var := VarType.t.
@@ -143,15 +70,14 @@ Module Opal (NodeType VarType WorldVarType OpType: OrderedType).
 
 
   Section Evaluation.
-    Definition sigma_t := NodeVarMap.t sexp_value.
+    Definition sigma_t : Type := NodeVarMap.t sexp_value.
     Definition sigma_0 : sigma_t := NodeVarMap.empty sexp_value.
-
     Definition sigma_get (sigma: sigma_t) (n: node) (v: var) : option sexp_value :=
       NodeVarMap.find (n,v) sigma.
     Definition sigma_set (sigma: sigma_t) (n: node) (v: var) (s: sexp_value) : sigma_t :=
       NodeVarMap.add (n,v) s sigma.
 
-    Definition sigmas_t := list sigma_t.
+    Definition sigmas_t : Type := list sigma_t.
     Fixpoint sigmas_get (sigmas: sigmas_t) (n: node) (v: var) : option sexp_value :=
       match sigmas with
       | nil => None
@@ -162,37 +88,37 @@ Module Opal (NodeType VarType WorldVarType OpType: OrderedType).
         end
       end.
 
-    Definition omega_t := WorldVarMap.t (sigma_t * sigma_t).
+    Definition omega_t : Type := WorldVarMap.t (sigma_t * sigma_t).
     Definition omega_0 : omega_t := WorldVarMap.empty (sigma_t * sigma_t).
     Definition omega_get (omega: omega_t) (u: worldvar) : option (sigma_t * sigma_t) :=
       WorldVarMap.find u omega.
     Definition omega_set (omega: omega_t) (u: worldvar) (sig_orig sig_hyp: sigma_t) : omega_t :=
       WorldVarMap.add u (sig_orig, sig_hyp) omega.
 
-    Definition pi_t := NodeSet.t.
-    Definition pi_0 : pi_t := NodeSet.empty.
+    Definition pi_t : Type := NodeMap.t unit.
+    Definition pi_0 : pi_t := NodeMap.empty unit.
     Definition pi_add (n: node) (pi: pi_t) : pi_t :=
-      NodeSet.add n pi.
+      NodeMap.add n tt pi.
     Definition pi_mem (n: node) (pi: pi_t) : Datatypes.bool :=
-      NodeSet.mem n pi.
+      NodeMap.mem n pi.
 
     Definition rho_t := node.
 
-    Definition eta_t := OpMap.t (node * var * sexp).
+    Definition eta_t : Type := OpMap.t (node * var * sexp).
     Definition eta_0 : eta_t := OpMap.empty (node * var * sexp).
     Definition eta_get (eta: eta_t) (op: op) : option (node * var * sexp) :=
       OpMap.find op eta.
     Definition eta_set (eta: eta_t) (op: op) (n: node) (v: var) (sh: sexp) : eta_t :=
       OpMap.add op (n,v,sh) eta.
 
-    Definition mu_t := NodeVarMap.t (var * var * var * sexp).
+    Definition mu_t : Type := NodeVarMap.t (var * var * var * sexp).
     Definition mu_0 : mu_t := NodeVarMap.empty (var * var * var * sexp).
     Definition mu_get (mu: mu_t) (n: node) (v: var) : option (var * var * var * sexp) :=
       NodeVarMap.find (n,v) mu.
     Definition mu_set (mu: mu_t) (n: node) (v vo vh vc: var) (sm: sexp) : mu_t:=
       NodeVarMap.add(n,v) (vo,vh,vc,sm) mu.
 
-    Fixpoint eval_eq (l r: sexp_value) :=
+    Fixpoint eval_eq (l r: sexp_value) : bool_value :=
       match l, r with
       | EmptySexpValue, EmptySexpValue => TrueBoolValue
       | ConsSexpValue ll lr, ConsSexpValue rl rr =>
@@ -203,7 +129,7 @@ Module Opal (NodeType VarType WorldVarType OpType: OrderedType).
       | _, _ => FalseBoolValue
       end.
 
-    Fixpoint eval_mem (l r: sexp_value) :=
+    Fixpoint eval_mem (l r: sexp_value) : bool_value :=
       match r with
       | EmptySexpValue => FalseBoolValue
       | ConsSexpValue rl rr =>
