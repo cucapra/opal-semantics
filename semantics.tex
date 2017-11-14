@@ -19,10 +19,11 @@
 \newcommand{\ifcom}[3]{\texttt{if}\ #1\ \texttt{then}\ \{#2\}\ \texttt{else}\ \{#3\}}
 \newcommand{\withcom}[2]{\texttt{with}\ #1\ \texttt{do}\ \{#2\}}
 \newcommand{\atcom}[2]{\texttt{at}\ #1\ \texttt{do}\ \{#2\}}
-\newcommand{\hypcom}[2]{#1\ :=\ \texttt{hyp}\ \{#2\}}
+\newcommand{\assgncom}[2]{#1\ :=\ #2}
 \newcommand{\commitcom}[1]{\texttt{commit}\ #1}
 \newcommand{\handlecom}[9]{\texttt{handle}\ #1.#2\ := \textit{#3}\ \texttt{with}\ #4\ \texttt{merging}\ #5\ #6\ #7\ \texttt{to}\ #8\ \texttt{in}\ \{#9\}}
 \newcommand{\opcom}[1]{\textit{#1}}
+\newcommand{\hypwrld}[1]{\texttt{hyp}\ \{#1\}}
 \newcommand{\bigcdot}{\raisebox{-0.75ex}{\scalebox{2}{$\cdot$}}}
 \newcommand{\partialfunc}{\rightharpoonup}
 \newcommand{\config}[1]{\langle #1 \rangle}
@@ -54,7 +55,7 @@ Tiny turing-incomplete language based on \imp with sexps:
 \alt \ifcom{\synt{Bool}}{\synt{Com}}{\synt{Com}}
 \alt \withcom{\synt{Node}}{\synt{Com}}
 \alt \atcom{\synt{Node}}{\synt{Com}}
-\alt \hypcom{\synt{World}}{\synt{Com}}
+\alt \assgncom{\synt{WorldVar}}{\synt{World}}
 \alt \commitcom{\synt{World}}
 \alt \handlecom{\synt{Node}}{\synt{Var}}{\synt{Op}}{\synt{Sexp}}{\synt{Var}}{\synt{Var}}{\synt{Var}}{\synt{Sexp}}{\synt{Com}}
 \alt <Op>
@@ -70,6 +71,9 @@ Tiny turing-incomplete language based on \imp with sexps:
 \alt <Bool> $\lor$ <Bool>
 \alt \true
 \alt \false
+
+<World> ::= <WorldVar>
+\alt \hypwrld{\synt{Com}}
 
 \end{grammar}
 
@@ -88,8 +92,8 @@ Tiny turing-incomplete language based on \imp with sexps:
 Well-formedness conditions:
 \begin{itemize}
 \item all used operations are defined
-\item all node/var accesses are defined (i.e. within the scope of a handler; if they access a world, that world has been defined)
 \item all node accesses are permissioned
+\item all node/var accesses are defined (i.e. within the scope of a handler; if they access a world, that world is in scope)
 \item all committed worlds are defined
 \item worlds are committed at most once
 \end{itemize}
@@ -118,19 +122,24 @@ Commands follow an affine typing scheme for worlds, wherein worlds can be used \
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\Omega, \Omega, \Sigma \vdash b : \textsc{Bool}$}
-\AxiomC{$\Omega', \Pi, \Sigma, H \vdash c_1 : \Omega'$}
-\AxiomC{$\Omega', \Pi, \Sigma, H \vdash c_2 : \Omega''$}
+\AxiomC{$\Omega, \Sigma \vdash b : \textsc{Bool}$}
+\AxiomC{$\Omega, \Pi, \Sigma, H \vdash c_1 : \Omega'$}
+\AxiomC{$\Omega, \Pi, \Sigma, H \vdash c_2 : \Omega''$}
 \TrinaryInfC{$\Omega, \Pi, \Sigma, H \vdash \ifcom{b}{c_1}{c_2} : \Omega' \cap \Omega''$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\varnothing, \Pi, \Sigma, H \vdash c : \Omega'$}
-\UnaryInfC{$\Omega, \Pi, \Sigma, H \vdash \hypcom{u}{c} : \Omega \cup \{u\}$}
+\AxiomC{$\Omega, \Pi, \Sigma, H \vdash w : \textsc{World}$}
+\UnaryInfC{$\Omega, \Pi, \Sigma, H \vdash \assgncom{u}{w} : \Omega \cup \{u\}$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$u \in \Omega$}
+\AxiomC{$\Omega, \Pi, \Sigma, H \vdash \hypwrld{c} : \textsc{World}$}
+\UnaryInfC{$\Omega, \Pi, \Sigma, H \vdash \commitcom{\hypwrld{c}} : \Omega$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{$\Omega, \Pi, \Sigma, H \vdash u : \textsc{World}$}
 \UnaryInfC{$\Omega, \Pi, \Sigma, H \vdash \commitcom{u} : \Omega \setminus \{u\}$}
 \end{prooftree}
 
@@ -207,14 +216,26 @@ Commands follow an affine typing scheme for worlds, wherein worlds can be used \
 
 \begin{prooftree}
 \AxiomC{$(n, v) \in \Sigma$}
-\AxiomC{$u \in \Omega$}
-\BinaryInfC{$\Omega, \Sigma \vdash u.n.v : \textsc{Sexp}$}
+\AxiomC{$\Omega, \Pi, \Sigma, H \vdash w : \textsc{World}$}
+\BinaryInfC{$\Omega, \Sigma \vdash w.n.v : \textsc{Sexp}$}
 \end{prooftree}
 
 \begin{prooftree}
 \AxiomC{$\Omega, \Sigma \vdash s_1 : \textsc{Sexp}$}
 \AxiomC{$\Omega, \Sigma \vdash s_2 : \textsc{Sexp}$}
 \BinaryInfC{$\Omega, \Sigma \vdash (s_1 . s_2) : \textsc{Sexp}$}
+\end{prooftree}
+
+\subsection{Worlds}
+
+\begin{prooftree}
+\AxiomC{$\varnothing, \Pi, \Sigma, H \vdash \commitcom{\hypwrld{c}} : \Omega'$}
+\UnaryInfC{$\Omega, \Pi, \Sigma, H \vdash \hypwrld{c} : \textsc{World}$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{$u \in \Omega$}
+\UnaryInfC{$\Omega, \Pi, \Sigma, H \vdash u : \textsc{World}$}
 \end{prooftree}
 
 
@@ -301,9 +322,9 @@ We describe handlers as a tuple of $(\synt{Node}, \synt{Var}, \synt{Op}, \synt{S
 \subsection{Hypothetical commands}
 
 \begin{prooftree}
-\AxiomC{$\config{c, (\sigma_\varnothing, (\sigma, \Sigma)), \omega_\varnothing, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma', \omega'}$}
+\AxiomC{$\config{w, (\sigma, \Sigma), \omega, \pi, \rho, \eta, \mu} \Downarrow \sigma_{hyp}$}
 \RightLabel{$\textsc{Hyp}$}
-\UnaryInfC{$\config{\hypcom{u}{c}, (\sigma, \Sigma), \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma, \omega[u \mapsto ((\sigma, \Sigma), \sigma')]}$}
+\UnaryInfC{$\config{\assgncom{u}{w}, (\sigma, \Sigma), \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma, \omega[u \mapsto (\sigma, \sigma_{hyp})]}$}
 \end{prooftree}
 
 \begin{prooftree}
@@ -336,20 +357,26 @@ We describe handlers as a tuple of $(\synt{Node}, \synt{Var}, \synt{Op}, \synt{S
 \begin{prooftree}
 \AxiomC{}
 \RightLabel{$\textsc{EmptySet}$}
-\UnaryInfC{$\config{\varnothing, \Sigma, \pi} \Downarrow \varnothing$}
+\UnaryInfC{$\config{\varnothing, \Sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow \varnothing$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\config{s_1, \Sigma, \pi} \Downarrow {s_v}_1$}
-\AxiomC{$\config{s_2, \Sigma, \pi} \Downarrow {s_v}_2$}
+\AxiomC{$\config{s_1, \Sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow s_1'$}
+\AxiomC{$\config{s_2, \Sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow s_2'$}
 \RightLabel{$\textsc{Cons}$}
-\BinaryInfC{$\config{(s_1 . s_2), \Sigma, \pi} \Downarrow ({s_v}_1 . {s_v}_2)$}
+\BinaryInfC{$\config{(s_1 . s_2), \Sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow (s_1' . s_2')$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\Sigma(n,v) = s_v$}
+\AxiomC{$\Sigma(n,v) = s$}
 \RightLabel{$\textsc{Var}$}
-\UnaryInfC{$\config{n.v, \Sigma, \pi} \Downarrow s_v$}
+\UnaryInfC{$\config{n.v, \Sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow s$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{$\Sigma(n,v) = s$}
+\RightLabel{$\textsc{Var}$}
+\BinaryInfC{$\config{w.n.v, \Sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow s$}
 \end{prooftree}
 
 \subsection{Bools}
@@ -447,6 +474,14 @@ We describe handlers as a tuple of $(\synt{Node}, \synt{Var}, \synt{Op}, \synt{S
 \end{prooftree}
 
 \textsc{EqProp} and \textsc{MemProp} are well-founded proof trees since the sexp step is idempotent, and the two props decrease on size of sexp, so the maximum depth of the proof tree is proportional to the maximum depth of the sexp values
+
+\subsection{Worlds}
+
+\begin{prooftree}
+\AxiomC{$\config{c, (\sigma_\varnothing, (\sigma, \Sigma)), \omega_\varnothing, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma', \omega'}$}
+\RightLabel{$\textsc{Hyp}$}
+\UnaryInfC{$\config{\assgncom{u}{w}, (\sigma, \Sigma), \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma, \omega[u \mapsto ((\sigma, \Sigma), \sigma')]}$}
+\end{prooftree}
 
 % proof that commits outside of "with" don't give any additional power that you shouldn't have
 % proof of that is the fact that it's in a store in the first place
