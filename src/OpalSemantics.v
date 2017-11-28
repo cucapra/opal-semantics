@@ -1,24 +1,36 @@
-Require Import CpdtTactics Structures.OrderedType Structures.OrderedTypeEx FMapAVL MSets Setoid Morphisms.
+Require Import CpdtTactics Structures.OrderedType FMapAVL FMapFacts Setoid Morphisms.
 
 Set Implicit Arguments.
 
 Axiom proof_irrelevance :
   forall (P : Prop) (p q : P), p = q.
 
-Print Module Type UsualOrderedType.
 
-Module Opal (NodeType VarType WorldVarType OpType: OrderedTypeEx.UsualOrderedType).
-  Module NodeVarType := OrderedTypeEx.PairOrderedType(NodeType)(VarType).
+Module Opal (NodeType VarType WorldVarType OpType: OrderedType.OrderedType).
+  Module NodeVarType : OrderedType.OrderedType with
+        Definition t := (NodeType.t * VarType.t)%type
+    := OrderedTypeEx.PairOrderedType(NodeType)(VarType).
 
-  Module NodeMap := FMapAVL.Make(NodeType).
-  Module NodeVarMap := FMapAVL.Make(NodeVarType).
-  Module WorldVarMap := FMapAVL.Make(WorldVarType).
-  Module OpMap := FMapAVL.Make(OpType).
+  Module NodeMap : FMapInterface.WS with Module E := NodeType :=
+    FMapAVL.Make(NodeType).
+  Module NodeMapFacts := FMapFacts.Properties(NodeMap).
+
+  Module NodeVarMap : FMapInterface.WS with Module E := NodeVarType :=
+    FMapAVL.Make(NodeVarType).
+  Module NodeVarMapFacts := FMapFacts.Properties(NodeVarMap).
+
+  Module WorldVarMap : FMapInterface.WS with Module E := WorldVarType :=
+    FMapAVL.Make(WorldVarType).
+  Module WorldVarMapFacts := FMapFacts.Properties(WorldVarMap).
+
+  Module OpMap : FMapInterface.WS with Module E := OpType :=
+    FMapAVL.Make(OpType).
+  Module OpMapFacts := FMapFacts.Properties(OpMap).
 
   Definition node := NodeType.t.
   Definition var := VarType.t.
-  Definition worldvar := WorldVarMap.key.
-  Definition op := OpMap.key.
+  Definition worldvar := WorldVarType.t.
+  Definition op := OpType.t.
 
   Inductive com :=
   | SkipCom : com
@@ -201,9 +213,12 @@ Module Opal (NodeType VarType WorldVarType OpType: OrderedTypeEx.UsualOrderedTyp
       end.
 
     Fixpoint eval_com (c: com) (sigmas: sigmas_t) (omega: omega_t) (pi: pi_t) (rho: rho_t) (eta: eta_t) (mu: mu_t) : option (sigma_t * omega_t) :=
-      match sigmas with
-      | nil => None
-      | cons sigma sigmas =>
+      match sigmas
+            as sigmas_
+            return (sigmas = sigmas_ -> option (sigma_t * omega_t))
+      with
+      | nil => fun H => None
+      | cons sigma sigmas => fun H =>
         match c with
         | SkipCom => Some (sigma, omega)
         | SeqCom c1 c2 =>
@@ -226,17 +241,23 @@ Module Opal (NodeType VarType WorldVarType OpType: OrderedTypeEx.UsualOrderedTyp
           eval_com c (cons sigma sigmas) omega pi n eta mu
         | HandleCom n v op sh vo vh vc sm c =>
           if pi_mem n pi then
-            eval_com c (cons (sigma_set sigma n v EmptySexpValue) sigmas) omega pi n (eta_set eta op n v sh) (mu_set mu n v vo vh vc sm)
+            let sigma_interior := sigma_set sigma n v EmptySexpValue in
+            let sigmas_interior := cons sigma_interior sigmas in
+            let eta_interior := eta_set eta op n v sh in
+            let mu_interior := mu_set mu n v vo vh vc sm in
+            eval_com c sigmas_interior omega pi n eta_interior mu_interior
           else
             None
         | OpCom op =>
           match eta_get eta op with
           | Some (n, v, sh) =>
-            match eval_sexp sh (cons sigma sigmas) omega pi with
-            | None => None
-            | Some s' =>
-              Some (sigma_set sigma n v s', omega)
-            end
+            if pi_mem n pi then
+              match eval_sexp sh (cons sigma sigmas) omega pi with
+              | None => None
+              | Some s' => Some (sigma_set sigma n v s', omega)
+              end
+            else
+              None
           | None => None
           end
         | WorldAssignCom u c =>
@@ -283,14 +304,49 @@ Module Opal (NodeType VarType WorldVarType OpType: OrderedTypeEx.UsualOrderedTyp
             end
           end
         end
-      end.
+      end eq_refl.
   End Evaluation.
 
   Section WellFormed.
-    Definition Omega_t := WorldVarSet.t.
-    Definition Sigma_t := NodeVarSet.t.
-    Definition Pi_t := NodeSet.t.
-    Definition H_t := OpSet.t.
+    Definition Omega_t : Type := WorldVarMap.t unit.
+    Definition Omega_0 : Omega_t := WorldVarMap.empty unit.
+    Definition Omega_in (Omega: Omega_t) (u: worldvar) : Prop :=
+      WorldVarMap.MapsTo u tt Omega
+    .
+    Definition Omega_add (Omega: Omega_t) (u: worldvar) : Omega_t :=
+      WorldVarMap.add u tt Omega
+    .
+    Definition Omega_remove (Omega: Omega_t) (u: worldvar) : Omega_t :=
+      WorldVarMap.remove u Omega
+    .
+    Definition Omega_inter (Omega Omega': Omega_t) : Omega_t :=
+      WorldVarMapFacts.restrict Omega Omega'.
+
+    Definition Sigma_t : Type := NodeVarMap.t unit.
+    Definition Sigma_0 : Sigma_t := NodeVarMap.empty unit.
+    Definition Sigma_in (Sigma: Sigma_t) (n: node) (v: var) : Prop :=
+      NodeVarMap.MapsTo (n,v) tt Sigma
+    .
+    Definition Sigma_add (Sigma: Sigma_t) (n: node) (v: var) : Sigma_t :=
+      NodeVarMap.add (n,v) tt Sigma
+    .
+
+    Definition Pi_t : Type := NodeMap.t unit.
+    Definition Pi_0 : Pi_t := NodeMap.empty unit.
+    Definition Pi_in (Pi: Pi_t) (n: node) : Prop :=
+      NodeMap.MapsTo n tt Pi
+    .
+    Definition Pi_add (Pi: Pi_t) (n: node) : Pi_t :=
+      NodeMap.add n tt Pi
+    .
+
+    Definition H_t := OpMap.t unit.
+    Definition H_in (H: H_t) (o: op) : Prop :=
+      OpMap.MapsTo o tt H
+    .
+    Definition H_add (H: H_t) (o: op) : H_t :=
+      OpMap.add o tt H
+    .
 
     Inductive well_formed_sexp : sexp -> Omega_t -> Sigma_t -> Pi_t -> Prop :=
     | EmptySexpWellFormed : forall Omega Sigma Pi,
@@ -300,13 +356,13 @@ Module Opal (NodeType VarType WorldVarType OpType: OrderedTypeEx.UsualOrderedTyp
         well_formed_sexp r Omega Sigma Pi ->
         well_formed_sexp (ConsSexp l r) Omega Sigma Pi
     | VarSexpWellFormed : forall n v Omega Sigma Pi,
-        NodeVarSet.In (n,v) Sigma ->
-        NodeSet.In n Pi ->
+        Sigma_in Sigma n v ->
+        Pi_in Pi n ->
         well_formed_sexp (VarSexp n v) Omega Sigma Pi
     | WeightSexpWellFormed : forall u n v Omega Sigma Pi,
-        WorldVarSet.In u Omega ->
-        NodeVarSet.In (n,v) Sigma ->
-        NodeSet.In n Pi ->
+        Omega_in Omega u ->
+        Sigma_in Sigma n v ->
+        Pi_in Pi n ->
         well_formed_sexp (WeightSexp u n v) Omega Sigma Pi
     .
 
@@ -345,49 +401,50 @@ Module Opal (NodeType VarType WorldVarType OpType: OrderedTypeEx.UsualOrderedTyp
         well_formed_com l Omega Sigma Pi H Omega' ->
         well_formed_com r Omega Sigma Pi H Omega'' ->
         well_formed_com (IfCom b l r) Omega Sigma Pi H
-                        (WorldVarSet.inter Omega' Omega'')
+                        (Omega_inter Omega' Omega'')
     | WithComWellFormed : forall n c Omega Sigma Pi H Omega',
-        well_formed_com c Omega Sigma (NodeSet.add n Pi) H Omega' ->
+        well_formed_com c Omega Sigma (Pi_add Pi n) H Omega' ->
         well_formed_com (WithCom n c) Omega Sigma Pi H Omega'
     | AtComWellFormed : forall n c Omega Sigma Pi H Omega',
         well_formed_com c Omega Sigma Pi H Omega' ->
         well_formed_com (AtCom n c) Omega Sigma Pi H Omega'
     | WorldAssignComWellFormed : forall u c Omega Sigma Pi H Omega',
-        well_formed_com c WorldVarSet.empty Sigma Pi H Omega' ->
-        well_formed_com (WorldAssignCom u c) Omega Sigma Pi H (WorldVarSet.add u Omega)
+        well_formed_com c Omega_0 Sigma Pi H Omega' ->
+        well_formed_com (WorldAssignCom u c) Omega Sigma Pi H (Omega_add Omega u)
     | CommitComWellFormed : forall u Omega Sigma Pi H,
-        WorldVarSet.In u Omega ->
-        well_formed_com (CommitCom u) Omega Sigma Pi H (WorldVarSet.remove u Omega)
+        Omega_in Omega u ->
+        well_formed_com (CommitCom u) Omega Sigma Pi H (Omega_remove Omega u)
     | HandleComWellFormed : forall n v op sh vo vh vc sm c Omega Sigma Pi H Omega',
-        NodeSet.In n Pi ->
-        NodeVarSet.In (n,v) Sigma ->
-        well_formed_sexp sh Omega (NodeVarSet.add (n,v) Sigma) Pi ->
-        well_formed_sexp sh Omega (NodeVarSet.add
-                                     (n,vc)
-                                     (NodeVarSet.add
-                                        (n,vh)
-                                        (NodeVarSet.add (n,vo) Sigma))) Pi ->
-        well_formed_com c Omega (NodeVarSet.add (n,v) Sigma) Pi (OpSet.add op H) Omega' ->
+        Pi_in Pi n ->
+        Sigma_in Sigma n v ->
+        well_formed_sexp sh Omega (Sigma_add Sigma n v) Pi ->
+        well_formed_sexp sh Omega (Sigma_add
+                                     (Sigma_add
+                                        (Sigma_add Sigma n vo)
+                                        n vh
+                                     ) n vc
+                                  ) Pi ->
+        well_formed_com c Omega (Sigma_add Sigma n v) Pi (H_add H op) Omega' ->
         well_formed_com (HandleCom n v op sh vo vh vc sm c) Omega Sigma Pi H Omega'
     | OpComWellFormed : forall op (Omega: Omega_t) Sigma Pi H Omega,
-        OpSet.In op H ->
+        H_in H op ->
         well_formed_com (OpCom op) Omega Sigma Pi H Omega
     .
   End WellFormed.
 
-  Definition omega_reps (omega: omega_t) (Omega: Omega_t) :=
-    forall k, WorldVarSet.In k Omega -> WorldVarMap.In k omega.
+  Definition omega_reps (omega: omega_t) (Omega: Omega_t) : Prop :=
+    forall k, Omega_in Omega k -> (exists v, WorldVarMap.MapsTo k v omega).
 
   Definition sigmas_reps (sigmas: sigmas_t) (Sigma: Sigma_t) : Prop :=
-    forall n v, NodeVarSet.In (n,v) Sigma ->
+    forall n v, Sigma_in Sigma n v ->
                 exists val, sigmas_get sigmas n v = Some val.
 
   Definition eta_reps (eta: eta_t) (H: H_t) : Prop :=
-    forall op, OpSet.In op H ->
+    forall op, H_in H op ->
                 exists v, eta_get eta op = Some v.
 
   Definition mu_reps (mu: mu_t) (Sigma: Sigma_t) : Prop :=
-    forall n v, NodeVarSet.In (n,v) Sigma ->
+    forall n v, Sigma_in Sigma n v ->
                 exists val, mu_get mu n v = Some val.
 
   Theorem sexp_progress:
@@ -406,7 +463,9 @@ Module Opal (NodeType VarType WorldVarType OpType: OrderedTypeEx.UsualOrderedTyp
       unfold eval_sexp.
       fold eval_sexp.
       edestruct eval_sexp; edestruct eval_sexp; eauto.
-    * assert (pi_mem n Pi = true). specialize (NodeSet.mem_spec Pi n). crush.
+    * assert (pi_mem n Pi = true).
+      unfold Pi_in in H8. unfold pi_mem.
+      specialize (NodeSet.mem_spec Pi n). crush.
       unfold sigmas_reps in H1.
       specialize (H1 n v H4).
       inversion H1.
