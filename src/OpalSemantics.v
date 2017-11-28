@@ -38,7 +38,6 @@ Module Opal (NodeType VarType WorldVarType OpType: OrderedType.OrderedType).
   | IfCom : bool -> com -> com -> com
   | WithCom : node -> com -> com
   | AtCom : node -> com -> com
-  | HandleCom : node -> var -> op -> sexp -> var -> var -> var -> sexp -> com -> com
   | OpCom : op -> com
   | WorldAssignCom : worldvar -> com -> com
   | CommitCom : worldvar -> com
@@ -116,19 +115,18 @@ Module Opal (NodeType VarType WorldVarType OpType: OrderedType.OrderedType).
 
     Definition rho_t := node.
 
-    Definition eta_t : Type := OpMap.t (node * var * sexp).
-    Definition eta_0 : eta_t := OpMap.empty (node * var * sexp).
-    Definition eta_get (eta: eta_t) (op: op) : option (node * var * sexp) :=
-      OpMap.find op eta.
-    Definition eta_set (eta: eta_t) (op: op) (n: node) (v: var) (sh: sexp) : eta_t :=
-      OpMap.add op (n,v,sh) eta.
+    Definition eta_t : Type := OpMap.t (node * var * (sexp_value -> sexp_value)).
 
-    Definition mu_t : Type := NodeVarMap.t (var * var * var * sexp).
-    Definition mu_0 : mu_t := NodeVarMap.empty (var * var * var * sexp).
-    Definition mu_get (mu: mu_t) (n: node) (v: var) : option (var * var * var * sexp) :=
+    Definition eta_get (eta: eta_t) (o: op) :
+      option (node * var * (sexp_value -> sexp_value)) :=
+      OpMap.find o eta.
+
+
+    Definition mu_t : Type := NodeVarMap.t (sexp_value -> sexp_value -> sexp_value -> sexp_value).
+
+    Definition mu_get (mu: mu_t) (n: node) (v: var) :
+      option (sexp_value -> sexp_value -> sexp_value -> sexp_value) :=
       NodeVarMap.find (n,v) mu.
-    Definition mu_set (mu: mu_t) (n: node) (v vo vh vc: var) (sm: sexp) : mu_t:=
-      NodeVarMap.add(n,v) (vo,vh,vc,sm) mu.
 
     Fixpoint eval_eq (l r: sexp_value) : bool_value :=
       match l, r with
@@ -239,25 +237,14 @@ Module Opal (NodeType VarType WorldVarType OpType: OrderedType.OrderedType).
           eval_com c (cons sigma sigmas) omega (pi_add n pi) rho eta mu
         | AtCom n c =>
           eval_com c (cons sigma sigmas) omega pi n eta mu
-        | HandleCom n v op sh vo vh vc sm c =>
-          if pi_mem n pi then
-            let sigma_interior := sigma_set sigma n v EmptySexpValue in
-            let sigmas_interior := cons sigma_interior sigmas in
-            let eta_interior := eta_set eta op n v sh in
-            let mu_interior := mu_set mu n v vo vh vc sm in
-            eval_com c sigmas_interior omega pi n eta_interior mu_interior
-          else
-            None
         | OpCom op =>
           match eta_get eta op with
-          | Some (n, v, sh) =>
-            if pi_mem n pi then
-              match eval_sexp sh (cons sigma sigmas) omega pi with
-              | None => None
-              | Some s' => Some (sigma_set sigma n v s', omega)
-              end
-            else
-              None
+          | Some (n, v, eta_mapper) =>
+            match sigmas_get (cons sigma sigmas) n v with
+            | Some sv =>
+              Some ((sigma_set sigma n v (eta_mapper sv)), omega)
+            | None => None
+            end
           | None => None
           end
         | WorldAssignCom u c =>
@@ -279,11 +266,8 @@ Module Opal (NodeType VarType WorldVarType OpType: OrderedType.OrderedType).
                              sigmas_get (cons sigma sigmas) n v,
                              sigmas_get (cons sigma_orig sigmas) n v
                        with
-                       | Some (vo, vh, vc, sm), Some sc, Some so =>
-                         let sigma_o := sigma_set sigma n vo so in
-                         let sigma_oh := sigma_set sigma_o n vh sh in
-                         let sigma_ohc := sigma_set sigma_oh n vc sc in
-                         eval_sexp sm (cons sigma_ohc sigmas) omega pi
+                       | Some merge_func, Some sc, Some so =>
+                         Some (merge_func so sh sc)
                        | _, _, _ => None
                        end
                      end)
