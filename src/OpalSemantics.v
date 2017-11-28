@@ -398,18 +398,6 @@ Module Opal (NodeType VarType WorldVarType OpType: OrderedType.OrderedType).
     | CommitComWellFormed : forall u Omega Sigma Pi H,
         Omega_in Omega u ->
         well_formed_com (CommitCom u) Omega Sigma Pi H (Omega_remove Omega u)
-    | HandleComWellFormed : forall n v op sh vo vh vc sm c Omega Sigma Pi H Omega',
-        Pi_in Pi n ->
-        Sigma_in Sigma n v ->
-        well_formed_sexp sh Omega (Sigma_add Sigma n v) Pi ->
-        well_formed_sexp sh Omega (Sigma_add
-                                     (Sigma_add
-                                        (Sigma_add Sigma n vo)
-                                        n vh
-                                     ) n vc
-                                  ) Pi ->
-        well_formed_com c Omega (Sigma_add Sigma n v) Pi (H_add H op) Omega' ->
-        well_formed_com (HandleCom n v op sh vo vh vc sm c) Omega Sigma Pi H Omega'
     | OpComWellFormed : forall op (Omega: Omega_t) Sigma Pi H Omega,
         H_in H op ->
         well_formed_com (OpCom op) Omega Sigma Pi H Omega
