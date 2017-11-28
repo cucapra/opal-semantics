@@ -437,7 +437,8 @@ Module Opal (NodeType VarType WorldVarType OpType: OrderedType.OrderedType).
       edestruct eval_sexp; edestruct eval_sexp; eauto.
     * assert (pi_mem n Pi = true).
       unfold Pi_in in H8. unfold pi_mem.
-      specialize (NodeSet.mem_spec Pi n). crush.
+      eapply NodeMap.mem_1.
+      unfold NodeMap.In. exists tt. auto.
       unfold sigmas_reps in H1.
       specialize (H1 n v H4).
       inversion H1.
@@ -445,8 +446,9 @@ Module Opal (NodeType VarType WorldVarType OpType: OrderedType.OrderedType).
       unfold eval_sexp.
       rewrite H2.
       apply H3.
-    * assert (pi_mem n Pi = true). specialize (NodeSet.mem_spec Pi n). crush.
-      crush.
+    * assert (pi_mem n Pi = true).
+      eapply NodeMap.mem_1.
+      unfold NodeMap.In. exists tt. auto.
       unfold omega_reps in H0.
       specialize (H0 w).
       intuition.
@@ -455,6 +457,12 @@ Module Opal (NodeType VarType WorldVarType OpType: OrderedType.OrderedType).
       specialize (WorldVarMap.find_1 H0).
       edestruct WorldVarMap.find ; intros ; try discriminate.
       destruct p.
+      injection H4. intros. subst. clear H4.
+      unfold eval_sexp.
+      destruct H3.
+      unfold omega_get.
+      specialize (WorldVarMap.find_1 H0). intros. rewrite H4.
+      unfold sigmas_get.
       destruct (sigma_get s0 n v) ; eauto.
   Qed.
 
