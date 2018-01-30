@@ -58,18 +58,18 @@ Tiny turing-incomplete language based on \imp with sexps:
 \alt \ifcom{\synt{Bool}}{\synt{Com}}{\synt{Com}}
 \alt \withcom{\synt{Node}}{\synt{Com}}
 \alt \atcom{\synt{Node}}{\synt{Com}}
-\alt \assgncom{\synt{WorldVar}}{\synt{World}}
-\alt \commitcom{\synt{World}}
-
-<Sexp> ::= $\varnothing$
-\alt <Node>.<Var>
-\alt <World>.<Node>.<Var>
-\alt ( <Sexp> . <Sexp> )
+\alt \assgncom{\synt{WorldVar}}{\hypwrld{c}}
+\alt \commitcom{\synt{WorldVar}}
 
 \end{grammar}
 \end{minipage}
 \begin{minipage}{0.5\textwidth}
 \begin{grammar}
+
+<Sexp> ::= $\varnothing$
+\alt <Node>.<Var>
+\alt <World>.<Node>.<Var>
+\alt ( <Sexp> . <Sexp> )
 
 <Bool> ::= <Sexp> = <Sexp>
 \alt <Sexp> $\in$ <Sexp>
@@ -78,8 +78,6 @@ Tiny turing-incomplete language based on \imp with sexps:
 \alt \true
 \alt \false
 
-<World> ::= <WorldVar>
-\alt \hypwrld{\synt{Com}}
 \end{grammar}
 \end{minipage}
 
@@ -147,26 +145,14 @@ The typing judgement for commands is a relation $R \subseteq \Omega \times \Pi \
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\Omega, \Pi, \Sigma \vdash w : \textsc{World}$}
-\TLabel{AssignWorldLit}
-\UnaryInfC{$\Omega, \Pi, \Sigma \vdash \assgncom{u}{w} : \Omega \cup \{u\}$}
+\AxiomC{$\varnothing, \Pi, \Sigma \vdash c : \Omega'$}
+\TLabel{AssignWorld}
+\UnaryInfC{$\Omega, \Pi, \Sigma \vdash \assgncom{u}{\hypwrld{c}} : \Omega \cup \{u\}$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\Omega, \Pi, \Sigma \vdash w : \textsc{World}$}
-\TLabel{AssignWorldVar}
-\UnaryInfC{$\Omega, \Pi, \Sigma \vdash \assgncom{u}{w} : \Omega \cup \{u\}$}
-\end{prooftree}
-
-\begin{prooftree}
-\AxiomC{$\Omega, \Pi, \Sigma \vdash \hypwrld{c} : \textsc{World}$}
-\TLabel{CommitWorldLit}
-\UnaryInfC{$\Omega, \Pi, \Sigma \vdash \commitcom{\hypwrld{c}} : \Omega$}
-\end{prooftree}
-
-\begin{prooftree}
-\AxiomC{$\Omega, \Pi, \Sigma \vdash u : \textsc{World}$}
-\TLabel{CommitWorldVar}
+\AxiomC{$u \in \Omega$}
+\TLabel{CommitWorld}
 \UnaryInfC{$\Omega, \Pi, \Sigma \vdash \commitcom{u} : \Omega \setminus \{u\}$}
 \end{prooftree}
 
@@ -254,18 +240,6 @@ The typing judgement for commands is a relation $R \subseteq \Omega \times \Pi \
 \BinaryInfC{$\Omega, \Pi, \Sigma \vdash (s_1 . s_2) : \textsc{Sexp}$}
 \end{prooftree}
 
-\subsection{Worlds}
-
-\begin{prooftree}
-\AxiomC{$\varnothing, \Pi, \Sigma \vdash c : \Omega'$}
-\UnaryInfC{$\Omega, \Pi, \Sigma \vdash \hypwrld{c} : \textsc{World}$}
-\end{prooftree}
-
-\begin{prooftree}
-\AxiomC{$u \in \Omega$}
-\UnaryInfC{$\Omega, \Pi, \Sigma \vdash u : \textsc{World}$}
-\end{prooftree}
-
 
 \section{Big Step Semantics}
 \subsection{Terminology}
@@ -330,9 +304,9 @@ In this semantics, \textsc{At} is effectively a noop/passthrough, resulting in b
 \subsection{Hypothetical commands}
 
 \begin{prooftree}
-\AxiomC{$\config{w, \sigma, \omega, \pi, \rho, \mu} \Downarrow \sigma_{\text{hyp}}$}
+\AxiomC{$\config{c, \sigma, \varnothing, \pi, \rho, \mu} \Downarrow \config{\sigma_{\text{hyp}}, \omega_{\text{hyp}}}$}
 \ELabel{Hyp}
-\UnaryInfC{$\config{\assgncom{u}{w}, \sigma, \omega, \pi, \rho, \mu} \Downarrow \config{\sigma, \omega[u \mapsto \sigma_{\text{hyp}}]}$}
+\UnaryInfC{$\config{\assgncom{u}{\hypwrld{c}}, \sigma, \omega, \pi, \rho, \mu} \Downarrow \config{\sigma, \omega[u \mapsto \sigma_{\text{hyp}}]}$}
 \end{prooftree}
 
 \begin{prooftree}
@@ -359,16 +333,19 @@ In this semantics, \textsc{At} is effectively a noop/passthrough, resulting in b
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\sigma(n,v) = s$}
+\AxiomC{$n \in \pi$}
+\AxiomC{$\sigma[n,v] = s$}
 \RightLabel{$\textsc{Var}$}
-\UnaryInfC{$\config{n.v, \sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow s$}
+\BinaryInfC{$\config{n.v, \sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow s$}
 \end{prooftree}
 
-%\begin{prooftree}
-%\AxiomC{$\sigma(n,v) = s$}
-%\RightLabel{$\textsc{Var}$}
-%\BinaryInfC{$\config{w.n.v, \sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow s$}
-%\end{prooftree}
+\begin{prooftree}
+\AxiomC{$n \in \pi$}
+\AxiomC{$\omega[u] = \sigma_\text{hyp}$}
+\AxiomC{$\sigma_\text{hyp}[n,v] = s$}
+\RightLabel{$\textsc{Weight}$}
+\TrinaryInfC{$\config{u.n.v, \sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow s$}
+\end{prooftree}
 
 \subsection{Bools}
 \begin{prooftree}
