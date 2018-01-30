@@ -10,8 +10,8 @@
 \usepackage{graphicx}
 \usepackage[landscape]{geometry}
 
-\title{Opal Semantics}
-\author{Alex Renda}
+\title{Opal Semantics: Technical Report}
+\author{Alex Renda, Harrison Goldstein, Sarah Bird, Chris Quirk, Adrian Sampson}
 \date{\today}
 
 \newcommand{\skipcom}{\texttt{skip}}
@@ -21,8 +21,6 @@
 \newcommand{\atcom}[2]{\texttt{at}\ #1\ \texttt{do}\ \{#2\}}
 \newcommand{\assgncom}[2]{#1\ :=\ #2}
 \newcommand{\commitcom}[1]{\texttt{commit}\ #1}
-\newcommand{\handlecom}[9]{\texttt{handle}\ #1.#2\ := \textit{#3}\ \texttt{with}\ #4\ \texttt{merging}\ #5\ #6\ #7\ \texttt{to}\ #8\ \texttt{in}\ \{#9\}}
-\newcommand{\opcom}[1]{\textit{#1}}
 \newcommand{\hypwrld}[1]{\texttt{hyp}\ \{#1\}}
 \newcommand{\bigcdot}{\raisebox{-0.75ex}{\scalebox{2}{$\cdot$}}}
 \newcommand{\partialfunc}{\rightharpoonup}
@@ -34,7 +32,10 @@
 \newcommand{\com}{C}
 \newcommand{\bool}{B}
 \newcommand{\imp}{\textsc{Imp}\xspace}
-\newcommand{\opal}{$\textsc{Opa}\lambda$\xspace}
+\newcommand{\opal}{\textsc{Opal}\xspace}
+
+\newcommand{\TLabel}[1]{\RightLabel{\textsc{T-#1}}}
+\newcommand{\ELabel}[1]{\RightLabel{\textsc{E-#1}}}
 
 % thanks to https://tex.stackexchange.com/a/132790
 \def\checkmark{\tikz\fill[scale=0.4](0,.35) -- (.25,0) -- (1,.7) -- (.25,.15) -- cycle;}
@@ -49,21 +50,26 @@ Tiny turing-incomplete language based on \imp with sexps:
 
 \section{Grammar}
 
+\begin{minipage}{0.5\textwidth}
 \begin{grammar}
 <Com> ::= \skipcom
 \alt \seqcom{\synt{Com}}{\synt{Com}}
+\alt \synt{Node}.\synt{Var} := \synt{Sexp}
 \alt \ifcom{\synt{Bool}}{\synt{Com}}{\synt{Com}}
 \alt \withcom{\synt{Node}}{\synt{Com}}
 \alt \atcom{\synt{Node}}{\synt{Com}}
 \alt \assgncom{\synt{WorldVar}}{\synt{World}}
 \alt \commitcom{\synt{World}}
-\alt \handlecom{\synt{Node}}{\synt{Var}}{\synt{Op}}{\synt{Sexp}}{\synt{Var}}{\synt{Var}}{\synt{Var}}{\synt{Sexp}}{\synt{Com}}
-\alt <Op>
 
 <Sexp> ::= $\varnothing$
 \alt <Node>.<Var>
 \alt <World>.<Node>.<Var>
 \alt ( <Sexp> . <Sexp> )
+
+\end{grammar}
+\end{minipage}
+\begin{minipage}{0.5\textwidth}
+\begin{grammar}
 
 <Bool> ::= <Sexp> = <Sexp>
 \alt <Sexp> $\in$ <Sexp>
@@ -74,168 +80,190 @@ Tiny turing-incomplete language based on \imp with sexps:
 
 <World> ::= <WorldVar>
 \alt \hypwrld{\synt{Com}}
-
 \end{grammar}
+\end{minipage}
 
 \subsection{Values}
 
+\begin{minipage}{0.5\textwidth}
 \begin{grammar}
+
 <SexpValue> ::= $\varnothing$
 \alt ( <SexpValue> . <SexpValue> )
 
+\end{grammar}
+\end{minipage}
+\begin{minipage}{0.5\textwidth}
+\begin{grammar}
+
 <BoolValue> ::= \true
 \alt \false
+
 \end{grammar}
+\end{minipage}
 
 \section{Typing Judgement}
 
 Well-formedness conditions:
 \begin{itemize}
-\item all used operations are defined
-\item all node accesses are permissioned
-\item all node/var accesses are defined (i.e. within the scope of a handler; if they access a world, that world is in scope)
-\item all committed worlds are defined
-\item worlds are committed at most once
+\item All node accesses are permissioned via a \texttt{with} block
+\item All variable accesses are defined (if they access a world, that world is defined and not committed)
+\item All committed worlds are defined
+\item Worlds are committed at most once
 \end{itemize}
 
 \subsection{Terminology}
-\begin{tabular}{l c p{6.4cm}}
-$\Sigma$ : & $2^{\synt{Node} \times \synt{Var}}$ & Set of variables in scope \\
-$H$ : & $2^{\synt{Op}}$ & Set of handlers in scope \\
-$\Pi$ : & $2^{\synt{Node}}$ & Set of nodes giving permission \\
-$\Omega$ : & $2^{\synt{World}}$ & Set of worlds in scope
+\begin{tabular}{l c l}
+$\Omega$ : & $2^{\synt{World}}$ & Set of worlds in scope \\
+$\Pi$ : & $2^{\synt{Node}}$ & Set of nodes giving permission to access variables \\
+$\Sigma$ : & $2^{\synt{Node} \times \synt{Var}}$ & Set of variables in scope
 \end{tabular}
 
 \subsection{Commands}
 
-Commands follow an affine typing scheme for worlds, wherein worlds can be used \textit{at most} once. This is achieved by a conservative judgement over commands: declaring a hypothetical world puts it into scope, committing it takes it out of scope, and if statements take the intersection of available worlds after each branch. Notably, worlds also cannot escape \texttt{handle} statements: since the behavior of committing (i.e. merging) is different inside and outside of a given handle, handles form a barrier across which worlds cannot cross.
+Commands follow an affine typing scheme for worlds, wherein worlds can be used \textit{at most} once. This is achieved by a conservative judgement over commands: declaring a hypothetical world puts it into scope, committing it takes it out of scope, and if statements take the intersection of available worlds after each branch.
+
+The typing judgement for commands is a relation $R \subseteq \Omega \times \Pi \times \Sigma \times \synt{Com} \times \Omega$, where intuitively the first three members are the state before the command is executed, and the final $\Omega$ is the conservative judgement of the set of available worlds after the command is executed.
 
 \begin{prooftree}
 \AxiomC{}
-\UnaryInfC{$\Omega, \Pi, \Sigma, H \vdash \skipcom : \Omega$}
+\TLabel{Skip}
+\UnaryInfC{$\Omega, \Pi, \Sigma \vdash \skipcom : \Omega$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\Omega, \Pi, \Sigma, H \vdash c_1 : \Omega'$}
-\AxiomC{$\Omega', \Pi, \Sigma, H \vdash c_2 : \Omega''$}
-\BinaryInfC{$\Omega, \Pi, \Sigma, H \vdash c_1 ; c_2 : \Omega''$}
+\AxiomC{$\Omega, \Pi, \Sigma \vdash c_1 : \Omega'$}
+\AxiomC{$\Omega', \Pi, \Sigma \vdash c_2 : \Omega''$}
+\TLabel{Seq}
+\BinaryInfC{$\Omega, \Pi, \Sigma \vdash c_1 ; c_2 : \Omega''$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\Omega, \Sigma \vdash b : \textsc{Bool}$}
-\AxiomC{$\Omega, \Pi, \Sigma, H \vdash c_1 : \Omega'$}
-\AxiomC{$\Omega, \Pi, \Sigma, H \vdash c_2 : \Omega''$}
-\TrinaryInfC{$\Omega, \Pi, \Sigma, H \vdash \ifcom{b}{c_1}{c_2} : \Omega' \cap \Omega''$}
+\AxiomC{$\Omega, \Pi, \Sigma \vdash b : \textsc{Bool}$}
+\AxiomC{$\Omega, \Pi, \Sigma \vdash c_1 : \Omega'$}
+\AxiomC{$\Omega, \Pi, \Sigma \vdash c_2 : \Omega''$}
+\TLabel{If}
+\TrinaryInfC{$\Omega, \Pi, \Sigma \vdash \ifcom{b}{c_1}{c_2} : \Omega' \cap \Omega''$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\Omega, \Pi, \Sigma, H \vdash w : \textsc{World}$}
-\UnaryInfC{$\Omega, \Pi, \Sigma, H \vdash \assgncom{u}{w} : \Omega \cup \{u\}$}
+\AxiomC{$\Omega, \Pi, \Sigma \vdash w : \textsc{World}$}
+\TLabel{AssignWorldLit}
+\UnaryInfC{$\Omega, \Pi, \Sigma \vdash \assgncom{u}{w} : \Omega \cup \{u\}$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\Omega, \Pi, \Sigma, H \vdash \hypwrld{c} : \textsc{World}$}
-\UnaryInfC{$\Omega, \Pi, \Sigma, H \vdash \commitcom{\hypwrld{c}} : \Omega$}
+\AxiomC{$\Omega, \Pi, \Sigma \vdash w : \textsc{World}$}
+\TLabel{AssignWorldVar}
+\UnaryInfC{$\Omega, \Pi, \Sigma \vdash \assgncom{u}{w} : \Omega \cup \{u\}$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\Omega, \Pi, \Sigma, H \vdash u : \textsc{World}$}
-\UnaryInfC{$\Omega, \Pi, \Sigma, H \vdash \commitcom{u} : \Omega \setminus \{u\}$}
+\AxiomC{$\Omega, \Pi, \Sigma \vdash \hypwrld{c} : \textsc{World}$}
+\TLabel{CommitWorldLit}
+\UnaryInfC{$\Omega, \Pi, \Sigma \vdash \commitcom{\hypwrld{c}} : \Omega$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$n \in \Pi$}
-\AxiomC{$\Sigma \cup \{(n, v)\} \vdash s_h : \textsc{Sexp}$}
-\AxiomC{$\Sigma \cup \{(n, v_o), (n, v_h), (n, v_c)\} \vdash s_m : \textsc{Sexp}$}
-\AxiomC{$\varnothing, \Pi, \Sigma \cup \{(n, v)\}, H \cup \{op\} \vdash c : \Omega'$}
-\QuaternaryInfC{$\Omega, \Pi, \Sigma, H \vdash \handlecom{n}{v}{op}{s_h}{v_o}{v_h}{v_c}{s_m}{c} : \Omega$}
+\AxiomC{$\Omega, \Pi, \Sigma \vdash u : \textsc{World}$}
+\TLabel{CommitWorldVar}
+\UnaryInfC{$\Omega, \Pi, \Sigma \vdash \commitcom{u} : \Omega \setminus \{u\}$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$op \in H$}
-\UnaryInfC{$\Omega, \Pi, \Sigma, H \vdash \opcom{op} : \Omega$}
+\AxiomC{$\Omega, \Pi \cup \{n\}, \Sigma \vdash c : \Omega'$}
+\TLabel{With}
+\UnaryInfC{$\Omega, \Pi, \Sigma \vdash \withcom{n}{c} : \Omega'$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\Omega, \Pi \cup \{n\}, \Sigma, H \vdash c : \Omega'$}
-\UnaryInfC{$\Omega, \Pi, \Sigma, H \vdash \withcom{n}{c} : \Omega'$}
-\end{prooftree}
-
-\begin{prooftree}
-\AxiomC{$\Omega, \Pi, \Sigma, H \vdash c : \Omega'$}
-\UnaryInfC{$\Omega, \Pi, \Sigma, H \vdash \atcom{n}{c} : \Omega'$}
+\AxiomC{$\Omega, \Pi, \Sigma \vdash c : \Omega'$}
+\TLabel{At}
+\UnaryInfC{$\Omega, \Pi, \Sigma \vdash \atcom{n}{c} : \Omega'$}
 \end{prooftree}
 
 \subsection{Booleans}
 
 \begin{prooftree}
 \AxiomC{}
-\UnaryInfC{$\Omega, \Sigma \vdash \true : \textsc{Bool}$}
+\TLabel{True}
+\UnaryInfC{$\Omega, \Pi, \Sigma \vdash \true : \textsc{Bool}$}
 \end{prooftree}
 
 \begin{prooftree}
 \AxiomC{}
-\UnaryInfC{$\Omega, \Sigma \vdash \false : \textsc{Bool}$}
+\TLabel{False}
+\UnaryInfC{$\Omega, \Pi, \Sigma \vdash \false : \textsc{Bool}$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\Omega, \Sigma \vdash b_1 : \textsc{Bool}$}
-\AxiomC{$\Omega, \Sigma \vdash b_2 : \textsc{Bool}$}
-\BinaryInfC{$\Omega, \Sigma \vdash b_1 \land b_2 : \textsc{Bool}$}
+\AxiomC{$\Omega, \Pi, \Sigma \vdash b_1 : \textsc{Bool}$}
+\AxiomC{$\Omega, \Pi, \Sigma \vdash b_2 : \textsc{Bool}$}
+\TLabel{Conj}
+\BinaryInfC{$\Omega, \Pi, \Sigma \vdash b_1 \land b_2 : \textsc{Bool}$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\Omega, \Sigma \vdash b_1 : \textsc{Bool}$}
-\AxiomC{$\Omega, \Sigma \vdash b_2 : \textsc{Bool}$}
-\BinaryInfC{$\Omega, \Sigma \vdash b_1 \lor b_2 : \textsc{Bool}$}
+\AxiomC{$\Omega, \Pi, \Sigma \vdash b_1 : \textsc{Bool}$}
+\AxiomC{$\Omega, \Pi, \Sigma \vdash b_2 : \textsc{Bool}$}
+\TLabel{Disj}
+\BinaryInfC{$\Omega, \Pi, \Sigma \vdash b_1 \lor b_2 : \textsc{Bool}$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\Omega, \Sigma \vdash s_1 : \textsc{Sexp}$}
-\AxiomC{$\Omega, \Sigma \vdash s_2 : \textsc{Sexp}$}
-\BinaryInfC{$\Omega, \Sigma \vdash s_1 = s_2 : \textsc{Bool}$}
+\AxiomC{$\Omega, \Pi, \Sigma \vdash s_1 : \textsc{Sexp}$}
+\AxiomC{$\Omega, \Pi, \Sigma \vdash s_2 : \textsc{Sexp}$}
+\TLabel{Eq}
+\BinaryInfC{$\Omega, \Pi, \Sigma \vdash s_1 = s_2 : \textsc{Bool}$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\Omega, \Sigma \vdash s_1 : \textsc{Sexp}$}
-\AxiomC{$\Omega, \Sigma \vdash s_2 : \textsc{Sexp}$}
-\BinaryInfC{$\Omega, \Sigma \vdash s_1 \in s_2 : \textsc{Bool}$}
+\AxiomC{$\Omega, \Pi, \Sigma \vdash s_1 : \textsc{Sexp}$}
+\AxiomC{$\Omega, \Pi, \Sigma \vdash s_2 : \textsc{Sexp}$}
+\TLabel{Mem}
+\BinaryInfC{$\Omega, \Pi, \Sigma \vdash s_1 \in s_2 : \textsc{Bool}$}
 \end{prooftree}
 
 \subsection{Sexps}
 
 \begin{prooftree}
 \AxiomC{}
-\UnaryInfC{$\Omega, \Sigma \vdash \varnothing : \textsc{Sexp}$}
+\TLabel{EmptySet}
+\UnaryInfC{$\Omega, \Pi, \Sigma \vdash \varnothing : \textsc{Sexp}$}
 \end{prooftree}
 
 \begin{prooftree}
+\AxiomC{$n \in \Pi$}
 \AxiomC{$(n, v) \in \Sigma$}
-\UnaryInfC{$\Omega, \Sigma \vdash n.v : \textsc{Sexp}$}
+\TLabel{Variable}
+\BinaryInfC{$\Omega, \Pi, \Sigma \vdash n.v : \textsc{Sexp}$}
 \end{prooftree}
 
 \begin{prooftree}
+\AxiomC{$n \in \Pi$}
 \AxiomC{$(n, v) \in \Sigma$}
-\AxiomC{$\Omega, \Pi, \Sigma, H \vdash w : \textsc{World}$}
-\BinaryInfC{$\Omega, \Sigma \vdash w.n.v : \textsc{Sexp}$}
+\AxiomC{$\Omega, \Pi, \Sigma \vdash w : \textsc{World}$}
+\TLabel{Weight}
+\TrinaryInfC{$\Omega, \Pi, \Sigma \vdash w.n.v : \textsc{Sexp}$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\Omega, \Sigma \vdash s_1 : \textsc{Sexp}$}
-\AxiomC{$\Omega, \Sigma \vdash s_2 : \textsc{Sexp}$}
-\BinaryInfC{$\Omega, \Sigma \vdash (s_1 . s_2) : \textsc{Sexp}$}
+\AxiomC{$\Omega, \Pi, \Sigma \vdash s_1 : \textsc{Sexp}$}
+\AxiomC{$\Omega, \Pi, \Sigma \vdash s_2 : \textsc{Sexp}$}
+\TLabel{Cons}
+\BinaryInfC{$\Omega, \Pi, \Sigma \vdash (s_1 . s_2) : \textsc{Sexp}$}
 \end{prooftree}
 
 \subsection{Worlds}
 
 \begin{prooftree}
-\AxiomC{$\varnothing, \Pi, \Sigma, H \vdash \commitcom{\hypwrld{c}} : \Omega'$}
-\UnaryInfC{$\Omega, \Pi, \Sigma, H \vdash \hypwrld{c} : \textsc{World}$}
+\AxiomC{$\varnothing, \Pi, \Sigma \vdash c : \Omega'$}
+\UnaryInfC{$\Omega, \Pi, \Sigma \vdash \hypwrld{c} : \textsc{World}$}
 \end{prooftree}
 
 \begin{prooftree}
 \AxiomC{$u \in \Omega$}
-\UnaryInfC{$\Omega, \Pi, \Sigma, H \vdash u : \textsc{World}$}
+\UnaryInfC{$\Omega, \Pi, \Sigma \vdash u : \textsc{World}$}
 \end{prooftree}
 
 
@@ -244,112 +272,75 @@ Commands follow an affine typing scheme for worlds, wherein worlds can be used \
 
 \begin{tabular}{l c p{6.4cm}}
 $\sigma$ : & $\synt{Node} \times \synt{Var} \partialfunc \synt{SexpValue}$ & function representing each node's store \\\\
-$\Sigma$ : & $\bigcdot \ \ |\ \ (\sigma, \Sigma)$ & stack of stores (for \textsc{Hyp} and \textsc{At}) \\\\
-$\omega$ : & $\synt{World} \partialfunc (\Sigma \times \sigma)$ & function representing each world's initial stack and final store \\\\
+$\omega$ : & $\synt{World} \partialfunc \sigma$ & function representing each world's initial stack and final store \\\\
 $\pi$ : & $2^{\synt{Node}}$ & current authorized set of principals \\\\
 $\rho$ : & $\synt{Node}$ & current execution location \\\\
-$\eta$ : & $\synt{Op} \partialfunc (\synt{Node} \times \synt{Var} \times \synt{Sexp})$ & mapping of handlers to their destinations and expressions \\\\
-$\mu$ : & $(\synt{Node} \times \synt{Var}) \partialfunc (\synt{Var} \times \synt{Var} \times \synt{Var} \times \synt{Sexp})$ & mapping of handler results to their merge expressions \\\\
-$\Downarrow_{\synt{Com}}$ : & $(\synt{Com} \times \Sigma \times \omega \times \pi \times \rho \times \eta \times \mu) \partialfunc (\sigma \times \omega)$  & Commands step to a new top-level store and new set of hypothetical worlds\\\\
-$\Downarrow_{\synt{Sexp}}$ : & $(\synt{Sexp} \times \Sigma \times \pi) \partialfunc \synt{SexpValue}$ & Sexps step to a value, or nothing if it cannot be evaluated due to undefined variables or lack of permission \\\\
-$\Downarrow_{\synt{Bool}}$ : & $(\synt{Bool} \times \Sigma \times \pi) \partialfunc \synt{BoolValue}$ & Bools step to a value, or nothing if it cannot be evaluated due to undefined variables or lack of permission \\\\
+$\mu$ : & $(\synt{Sexp} \times \synt{Sexp}) \partialfunc \synt{Sexp}$ & function which merges two divergent data structures, or fails \\\\
+$\Downarrow_{\synt{Com}}$ : & $(\synt{Com} \times \sigma \times \omega \times \pi \times \rho \times \mu) \partialfunc (\sigma \times \omega)$  & Commands step to a new top-level store and new set of hypothetical worlds\\\\
+$\Downarrow_{\synt{Sexp}}$ : & $(\synt{Sexp} \times \sigma \times \pi) \partialfunc \synt{SexpValue}$ & Sexps step to a value, or nothing if it cannot be evaluated due to undefined variables or lack of permission \\\\
+$\Downarrow_{\synt{Bool}}$ : & $(\synt{Bool} \times \sigma \times \pi) \partialfunc \synt{BoolValue}$ & Bools step to a value, or nothing if it cannot be evaluated due to undefined variables or lack of permission \\\\
 \end{tabular}
 
 \subsection{Basic commands}
 \begin{prooftree}
 \AxiomC{}
-\RightLabel{$\textsc{Skip}$}
-\UnaryInfC{$\config{\skipcom, (\sigma, \Sigma), \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma, \omega}$}
+\ELabel{Skip}
+\UnaryInfC{$\config{\skipcom, \sigma, \omega, \pi, \rho, \mu} \Downarrow \config{\sigma, \omega}$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\config{c_1, (\sigma, \Sigma), \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma', \omega'}$}
-\AxiomC{$\config{c_2, (\sigma', \Sigma), \omega', \pi, \rho, \eta, \mu} \Downarrow \config{\sigma'', \omega''}$}
-\RightLabel{$\textsc{Seq}$}
-\BinaryInfC{$\config{\seqcom{c_1}{c_2}, (\sigma, \Sigma), \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma'', \omega''}$}
+\AxiomC{$\config{c_1, \sigma, \omega, \pi, \rho, \mu} \Downarrow \config{\sigma', \omega'}$}
+\AxiomC{$\config{c_2, \sigma', \omega', \pi, \rho, \mu} \Downarrow \config{\sigma'', \omega''}$}
+\ELabel{Seq}
+\BinaryInfC{$\config{\seqcom{c_1}{c_2}, \sigma, \omega, \pi, \rho, \mu} \Downarrow \config{\sigma'', \omega''}$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\config{b, \Sigma, \pi} \Downarrow \true$}
-\AxiomC{$\config{c_1, \Sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma', \omega'}$}
-\RightLabel{$\textsc{If-True}$}
-\BinaryInfC{$\config{\ifcom{b}{c_1}{c_2}, \Sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma', \omega'}$}
+\AxiomC{$\config{b, \sigma, \pi} \Downarrow \true$}
+\AxiomC{$\config{c_1, \sigma, \omega, \pi, \rho, \mu} \Downarrow \config{\sigma', \omega'}$}
+\ELabel{If-True}
+\BinaryInfC{$\config{\ifcom{b}{c_1}{c_2}, \sigma, \omega, \pi, \rho, \mu} \Downarrow \config{\sigma', \omega'}$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\config{b, \Sigma, \pi} \Downarrow \false$}
-\AxiomC{$\config{c_2, \Sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma', \omega'}$}
-\RightLabel{$\textsc{If-False}$}
-\BinaryInfC{$\config{\ifcom{b}{c_1}{c_2}, \Sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma', \omega'}$}
+\AxiomC{$\config{b, \sigma, \pi} \Downarrow \false$}
+\AxiomC{$\config{c_2, \sigma, \omega, \pi, \rho, \mu} \Downarrow \config{\sigma', \omega'}$}
+\ELabel{If-False}
+\BinaryInfC{$\config{\ifcom{b}{c_1}{c_2}, \sigma, \omega, \pi, \rho, \mu} \Downarrow \config{\sigma', \omega'}$}
 \end{prooftree}
 
 \subsection{Distribution commands}
-In this semantics, \textsc{At} is effectively a noop/passthrough, resulting in behavior that would be identical with or without it (modulo endorsement taking location into account). It does have real-world semantics though: \textsc{At} represents executing a command on another computer, starting with a new empty store on the top of the stack, and shipping back the new store at the end. Beyond this, exact semantics are implementation dependent. An implementation could, in theory, send the entire stack of stores over in addition to just the command. Alternatively, the new machine could request any specific variables it needs, to mitigate the amount of data shuttled over the network.
-
+In this semantics, \textsc{At} is effectively a noop/passthrough, resulting in behavior that would be identical with or without it (modulo endorsement taking location into account).
 
 \textsc{With} is also a passthrough in a similar regard: its runtime effects consist of asking the specified user for permission to run the specified command on the current machine (represented by $\config{n, \rho, c}\ \checkmark$ in the semantics -- the details of this function are implementation dependent).
 
 \begin{prooftree}
-\AxiomC{$\config{c, (\sigma_\varnothing, (\sigma, \Sigma)), \omega, \pi, n, \eta, \mu} \Downarrow \config{\sigma', \omega'}$}
-\RightLabel{$\textsc{At}$}
-\UnaryInfC{$\config{\atcom{n}{c}, (\sigma, \Sigma), \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma';\sigma, \omega'}$}
+\AxiomC{$\config{c, \sigma, \omega, \pi, n, \mu} \Downarrow \config{\sigma', \omega'}$}
+\ELabel{At}
+\UnaryInfC{$\config{\atcom{n}{c}, \sigma, \omega, \pi, \rho, \mu} \Downarrow \config{\sigma', \omega'}$}
 \end{prooftree}
 
 \begin{prooftree}
 \AxiomC{$\config{n, \rho, c}\ \checkmark$}
-\AxiomC{$\config{c, \Sigma, \omega, \pi \cup \{n\}, \rho, \eta, \mu} \Downarrow \config{\sigma', \omega'}$}
-\RightLabel{$\textsc{With}$}
-\BinaryInfC{$\config{\withcom{n}{c}, \Sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma', \omega'}$}
-\end{prooftree}
-
-\subsection{Handler commands}
-We describe handlers as a tuple of $(\synt{Node}, \synt{Var}, \synt{Op}, \synt{Sexp}_h, \synt{Sexp}_m, \synt{Com})$, where $\synt{Node}$ is the node to write results to, $\synt{Var}$ is the variable on that node to write results to, $\synt{Op}$ is the name of the handler, $\synt{Sexp}_h$ is a sexp that gets lazily evaluated with its results written to $\synt{Node}.\synt{Var}$ each time $\synt{Op}$ is called, and $\synt{Sexp}_m$ is a sexp that gets lazily evaluated upon merge conflicts within a variable upon \texttt{commit}ing a hypothetical world, with $\varnothing.\textsc{Orig}$ set to the original value of the variable before the hypothetical execution, $\varnothing.\textsc{Hyp}$ set to the value of the variable after the hypothetical execution, and $\varnothing.\textsc{Curr}$ set to the value of the variable in the context of where $\texttt{commit}$ is being called. Immediately within the scope of a handler, the handled variable is set to $\varnothing$.
-
-\begin{prooftree}
-\AxiomC{$\config{c, (\sigma[(n, v) \mapsto \varnothing], \Sigma), \omega, \pi, \rho, \eta[op \mapsto (n, v, s_h)], \mu[(n, v) \mapsto (v_i, v_h, v_c, s_m)]} \Downarrow \config{\sigma', \omega'}$}
-\AxiomC{$n \in \pi$}
-\RightLabel{$\textsc{Handle}$}
-\BinaryInfC{$\config{\handlecom{n}{v}{op}{s_h}{v_o}{v_h}{v_c}{s_m}{c}, (\sigma, \Sigma), \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma', \omega'}$}
-\end{prooftree}
-
-\begin{prooftree}
-\AxiomC{$\eta(op) = (n, v, s_h)$}
-\AxiomC{$\config{s_h, (\sigma, \Sigma), \pi} \Downarrow s$}
-\RightLabel{$\textsc{Op}$}
-\BinaryInfC{$\config{\opcom{op}, (\sigma, \Sigma), \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma[(n, v) \mapsto s], \omega}$}
+\AxiomC{$\config{c, \sigma, \omega, \pi \cup \{n\}, \rho, \mu} \Downarrow \config{\sigma', \omega'}$}
+\ELabel{With}
+\BinaryInfC{$\config{\withcom{n}{c}, \sigma, \omega, \pi, \rho, \mu} \Downarrow \config{\sigma', \omega'}$}
 \end{prooftree}
 
 \subsection{Hypothetical commands}
 
 \begin{prooftree}
-\AxiomC{$\config{w, (\sigma, \Sigma), \omega, \pi, \rho, \eta, \mu} \Downarrow \sigma_{hyp}$}
-\RightLabel{$\textsc{Hyp}$}
-\UnaryInfC{$\config{\assgncom{u}{w}, (\sigma, \Sigma), \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma, \omega[u \mapsto (\sigma, \sigma_{hyp})]}$}
+\AxiomC{$\config{w, \sigma, \omega, \pi, \rho, \mu} \Downarrow \sigma_{\text{hyp}}$}
+\ELabel{Hyp}
+\UnaryInfC{$\config{\assgncom{u}{w}, \sigma, \omega, \pi, \rho, \mu} \Downarrow \config{\sigma, \omega[u \mapsto \sigma_{\text{hyp}}]}$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\config{n.v, \Sigma_{orig}, \pi} \Downarrow s_o$}
-\AxiomC{$\config{n.v, (\sigma_{hyp}, \Sigma_{orig}), \pi} \Downarrow s_h$}
-\AxiomC{$\config{n.v, (\sigma_{curr}, \Sigma_{curr}), \pi} \Downarrow s_c$}
-\RightLabel{$\textsc{MergeStore}$}
-\TrinaryInfC{$\sigma_{merge} = [(n, vo) \mapsto s_o, (n, vh) \mapsto s_h, (n, vc) \mapsto s_c]$}
-\end{prooftree}
-
-\begin{prooftree}
-\AxiomC{$\mu((n,v)) = s_m v_o, v_h, v_c$}
-\AxiomC{\textsc{MergeStore}}
-\AxiomC{$\config{s_m, (\sigma_{merge}, (\sigma_{curr}, \Sigma_{curr})), \pi} \Downarrow v_m$}
-\RightLabel{$\textsc{MergesTo}$}
-\TrinaryInfC{$\sigma'[(n,v) \mapsto v_m]$}
-\end{prooftree}
-
-
-\begin{prooftree}
-\AxiomC{$\omega(u) = (\Sigma_{\texttt{orig}}, \sigma_{\texttt{hyp}})$}
-\AxiomC{$\forall (n, v, s) \in \sigma_{\texttt{hyp}}, \textsc{MergesTo}$}
-\AxiomC{$\forall (n, v), \neg \exists s . (n, v, s) \in \sigma_{\texttt{hyp}} \Rightarrow \neg \exists s . (n, v, s) \in \sigma'$}
-\RightLabel{$\textsc{Commit}$}
-\TrinaryInfC{$\config{\commitcom{u}, (\sigma_{curr}, \Sigma_{curr}), \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma', \omega}$}
+\AxiomC{$\omega[u] = \sigma_{\text{hyp}}$}
+\AxiomC{$\forall v \in \sigma_{\text{hyp}}.\ \sigma_{\text{merge}}[v] = \mu(\sigma_\text{curr}[v], \sigma_\text{hyp}[v])$}
+\AxiomC{$\forall v \not\in \sigma_{\text{hyp}}. \not\exists s. \sigma_{\text{merge}}[v] = s$}
+\ELabel{Commit}
+\TrinaryInfC{$\config{\commitcom{u}, \sigma_{\text{curr}}, \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma_{\text{merge}} ; \sigma_{\text{curr}}, \omega}$}
 \end{prooftree}
 
 \subsection{Sexps}
@@ -357,131 +348,123 @@ We describe handlers as a tuple of $(\synt{Node}, \synt{Var}, \synt{Op}, \synt{S
 \begin{prooftree}
 \AxiomC{}
 \RightLabel{$\textsc{EmptySet}$}
-\UnaryInfC{$\config{\varnothing, \Sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow \varnothing$}
+\UnaryInfC{$\config{\varnothing, \sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow \varnothing$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\config{s_1, \Sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow s_1'$}
-\AxiomC{$\config{s_2, \Sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow s_2'$}
+\AxiomC{$\config{s_1, \sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow s_1'$}
+\AxiomC{$\config{s_2, \sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow s_2'$}
 \RightLabel{$\textsc{Cons}$}
-\BinaryInfC{$\config{(s_1 . s_2), \Sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow (s_1' . s_2')$}
+\BinaryInfC{$\config{(s_1 . s_2), \sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow (s_1' . s_2')$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\Sigma(n,v) = s$}
+\AxiomC{$\sigma(n,v) = s$}
 \RightLabel{$\textsc{Var}$}
-\UnaryInfC{$\config{n.v, \Sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow s$}
+\UnaryInfC{$\config{n.v, \sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow s$}
 \end{prooftree}
 
-\begin{prooftree}
-\AxiomC{$\Sigma(n,v) = s$}
-\RightLabel{$\textsc{Var}$}
-\BinaryInfC{$\config{w.n.v, \Sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow s$}
-\end{prooftree}
+%\begin{prooftree}
+%\AxiomC{$\sigma(n,v) = s$}
+%\RightLabel{$\textsc{Var}$}
+%\BinaryInfC{$\config{w.n.v, \sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow s$}
+%\end{prooftree}
 
 \subsection{Bools}
 \begin{prooftree}
 \AxiomC{}
 \RightLabel{$\textsc{True}$}
-\UnaryInfC{$\config{\true, \Sigma, \pi} \Downarrow \true$}
+\UnaryInfC{$\config{\true, \sigma, \pi} \Downarrow \true$}
 \end{prooftree}
 \begin{prooftree}
 \AxiomC{}
 \RightLabel{$\textsc{False}$}
-\UnaryInfC{$\config{\false, \Sigma, \pi} \Downarrow \false$}
+\UnaryInfC{$\config{\false, \sigma, \pi} \Downarrow \false$}
 \end{prooftree}
 
 \begin{prooftree}w
-\AxiomC{$\config{b_1, \Sigma, \pi} \Downarrow \true$}
-\AxiomC{$\config{b_2, \Sigma, \pi} \Downarrow \true$}
+\AxiomC{$\config{b_1, \sigma, \pi} \Downarrow \true$}
+\AxiomC{$\config{b_2, \sigma, \pi} \Downarrow \true$}
 \RightLabel{$\textsc{AndTrue}$}
-\BinaryInfC{$\config{b_1 \land b_2, \Sigma, \pi} \Downarrow \true$}
+\BinaryInfC{$\config{b_1 \land b_2, \sigma, \pi} \Downarrow \true$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\config{b_1, \Sigma, \pi} \Downarrow \false$}
+\AxiomC{$\config{b_1, \sigma, \pi} \Downarrow \false$}
 \RightLabel{$\textsc{AndFalseL}$}
-\UnaryInfC{$\config{b_1 \land b_2, \Sigma, \pi} \Downarrow \false$}
+\UnaryInfC{$\config{b_1 \land b_2, \sigma, \pi} \Downarrow \false$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\config{b_2, \Sigma, \pi} \Downarrow \false$}
+\AxiomC{$\config{b_2, \sigma, \pi} \Downarrow \false$}
 \RightLabel{$\textsc{AndFalseR}$}
-\UnaryInfC{$\config{b_1 \land b_2, \Sigma, \pi} \Downarrow \false$}
+\UnaryInfC{$\config{b_1 \land b_2, \sigma, \pi} \Downarrow \false$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\config{b_1, \Sigma, \pi} \Downarrow \false$}
-\AxiomC{$\config{b_2, \Sigma, \pi} \Downarrow \false$}
+\AxiomC{$\config{b_1, \sigma, \pi} \Downarrow \false$}
+\AxiomC{$\config{b_2, \sigma, \pi} \Downarrow \false$}
 \RightLabel{$\textsc{OrFalse}$}
-\BinaryInfC{$\config{b_1 \lor b_2, \Sigma, \pi} \Downarrow \false$}
+\BinaryInfC{$\config{b_1 \lor b_2, \sigma, \pi} \Downarrow \false$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\config{b_1, \Sigma, \pi} \Downarrow \true$}
+\AxiomC{$\config{b_1, \sigma, \pi} \Downarrow \true$}
 \RightLabel{$\textsc{OrTrueL}$}
-\UnaryInfC{$\config{b_1 \lor b_2, \Sigma, \pi} \Downarrow \true$}
+\UnaryInfC{$\config{b_1 \lor b_2, \sigma, \pi} \Downarrow \true$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\config{b_2, \Sigma, \pi} \Downarrow \true$}
+\AxiomC{$\config{b_2, \sigma, \pi} \Downarrow \true$}
 \RightLabel{$\textsc{OrTrueR}$}
-\UnaryInfC{$\config{b_1 \lor b_2, \Sigma, \pi} \Downarrow \true$}
+\UnaryInfC{$\config{b_1 \lor b_2, \sigma, \pi} \Downarrow \true$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\config{s_1, \Sigma, \pi} \Downarrow \varnothing$}
-\AxiomC{$\config{s_2, \Sigma, \pi} \Downarrow \varnothing$}
+\AxiomC{$\config{s_1, \sigma, \pi} \Downarrow \varnothing$}
+\AxiomC{$\config{s_2, \sigma, \pi} \Downarrow \varnothing$}
 \RightLabel{$\textsc{EqTrue}$}
-\BinaryInfC{$\config{s_1 = s_2, \Sigma, \pi} \Downarrow \true$}
+\BinaryInfC{$\config{s_1 = s_2, \sigma, \pi} \Downarrow \true$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\config{s_1, \Sigma, \pi} \Downarrow ({{s_v}_1}_1 . {{s_v}_1}_2)$}
-\AxiomC{$\config{s_2, \Sigma, \pi} \Downarrow \varnothing$}
+\AxiomC{$\config{s_1, \sigma, \pi} \Downarrow ({{s_v}_1}_1 . {{s_v}_1}_2)$}
+\AxiomC{$\config{s_2, \sigma, \pi} \Downarrow \varnothing$}
 \RightLabel{$\textsc{EqFalseL}$}
-\BinaryInfC{$\config{s_1 = s_2, \Sigma, \pi} \Downarrow \false$}
+\BinaryInfC{$\config{s_1 = s_2, \sigma, \pi} \Downarrow \false$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\config{s_1, \Sigma, \pi} \Downarrow \varnothing$}
-\AxiomC{$\config{s_2, \Sigma, \pi} \Downarrow ({{s_v}_2}_1 . {{s_v}_2}_2)$}
+\AxiomC{$\config{s_1, \sigma, \pi} \Downarrow \varnothing$}
+\AxiomC{$\config{s_2, \sigma, \pi} \Downarrow ({{s_v}_2}_1 . {{s_v}_2}_2)$}
 \RightLabel{$\textsc{EqFalseR}$}
-\BinaryInfC{$\config{s_1 = s_2, \Sigma, \pi} \Downarrow \false$}
+\BinaryInfC{$\config{s_1 = s_2, \sigma, \pi} \Downarrow \false$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\config{s_1, \Sigma, \pi} \Downarrow ({{s_v}_1}_1 . {{s_v}_1}_2)$}
-\AxiomC{$\config{s_2, \Sigma, \pi} \Downarrow ({{s_v}_2}_1 . {{s_v}_2}_2)$}
-\AxiomC{$\config{{{s_v}_1}_1 = {{s_v}_2}_1 \land {{s_v}_1}_2 = {{s_v}_2}_2, \Sigma, \pi} \Downarrow b$}
+\AxiomC{$\config{s_1, \sigma, \pi} \Downarrow ({{s_v}_1}_1 . {{s_v}_1}_2)$}
+\AxiomC{$\config{s_2, \sigma, \pi} \Downarrow ({{s_v}_2}_1 . {{s_v}_2}_2)$}
+\AxiomC{$\config{{{s_v}_1}_1 = {{s_v}_2}_1 \land {{s_v}_1}_2 = {{s_v}_2}_2, \sigma, \pi} \Downarrow b$}
 \RightLabel{$\textsc{EqProp}$}
-\TrinaryInfC{$\config{s_1 = s_2, \Sigma, \pi} \Downarrow b$}
+\TrinaryInfC{$\config{s_1 = s_2, \sigma, \pi} \Downarrow b$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\config{s_1, \Sigma, \pi} \Downarrow {s_v}_1$}
-\AxiomC{$\config{s_2, \Sigma, \pi} \Downarrow \varnothing$}
+\AxiomC{$\config{s_1, \sigma, \pi} \Downarrow {s_v}_1$}
+\AxiomC{$\config{s_2, \sigma, \pi} \Downarrow \varnothing$}
 \RightLabel{$\textsc{MemFalse}$}
-\BinaryInfC{$\config{s_1 \in s_2, \Sigma, \pi} \Downarrow \false$}
+\BinaryInfC{$\config{s_1 \in s_2, \sigma, \pi} \Downarrow \false$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\config{s_1, \Sigma, \pi} \Downarrow {s_v}_1$}
-\AxiomC{$\config{s_2, \Sigma, \pi} \Downarrow ({{s_v}_2}_1 . {{s_v}_2}_2)$}
-\AxiomC{$\config{{s_v}_1 = {{s_v}_2}_1 \lor {s_v}_1 \in {{s_v}_2}_2, \Sigma, \pi} \Downarrow b$}
+\AxiomC{$\config{s_1, \sigma, \pi} \Downarrow {s_v}_1$}
+\AxiomC{$\config{s_2, \sigma, \pi} \Downarrow ({{s_v}_2}_1 . {{s_v}_2}_2)$}
+\AxiomC{$\config{{s_v}_1 = {{s_v}_2}_1 \lor {s_v}_1 \in {{s_v}_2}_2, \sigma, \pi} \Downarrow b$}
 \RightLabel{$\textsc{MemProp}$}
-\TrinaryInfC{$\config{s_1 \in s_2, \Sigma, \pi} \Downarrow b$}
+\TrinaryInfC{$\config{s_1 \in s_2, \sigma, \pi} \Downarrow b$}
 \end{prooftree}
 
 \textsc{EqProp} and \textsc{MemProp} are well-founded proof trees since the sexp step is idempotent, and the two props decrease on size of sexp, so the maximum depth of the proof tree is proportional to the maximum depth of the sexp values
-
-\subsection{Worlds}
-
-\begin{prooftree}
-\AxiomC{$\config{c, (\sigma_\varnothing, (\sigma, \Sigma)), \omega_\varnothing, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma', \omega'}$}
-\RightLabel{$\textsc{Hyp}$}
-\UnaryInfC{$\config{\assgncom{u}{w}, (\sigma, \Sigma), \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma, \omega[u \mapsto ((\sigma, \Sigma), \sigma')]}$}
-\end{prooftree}
 
 % proof that commits outside of "with" don't give any additional power that you shouldn't have
 % proof of that is the fact that it's in a store in the first place
