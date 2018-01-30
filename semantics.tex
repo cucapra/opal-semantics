@@ -270,15 +270,15 @@ The typing judgement for commands is a relation $R \subseteq \Omega \times \Pi \
 \section{Big Step Semantics}
 \subsection{Terminology}
 
-\begin{tabular}{l c p{6.4cm}}
-$\sigma$ : & $\synt{Node} \times \synt{Var} \partialfunc \synt{SexpValue}$ & function representing each node's store \\\\
-$\omega$ : & $\synt{World} \partialfunc \sigma$ & function representing each world's initial stack and final store \\\\
-$\pi$ : & $2^{\synt{Node}}$ & current authorized set of principals \\\\
-$\rho$ : & $\synt{Node}$ & current execution location \\\\
-$\mu$ : & $(\synt{Sexp} \times \synt{Sexp}) \partialfunc \synt{Sexp}$ & function which merges two divergent data structures, or fails \\\\
-$\Downarrow_{\synt{Com}}$ : & $(\synt{Com} \times \sigma \times \omega \times \pi \times \rho \times \mu) \partialfunc (\sigma \times \omega)$  & Commands step to a new top-level store and new set of hypothetical worlds\\\\
-$\Downarrow_{\synt{Sexp}}$ : & $(\synt{Sexp} \times \sigma \times \pi) \partialfunc \synt{SexpValue}$ & Sexps step to a value, or nothing if it cannot be evaluated due to undefined variables or lack of permission \\\\
-$\Downarrow_{\synt{Bool}}$ : & $(\synt{Bool} \times \sigma \times \pi) \partialfunc \synt{BoolValue}$ & Bools step to a value, or nothing if it cannot be evaluated due to undefined variables or lack of permission \\\\
+\begin{tabular}{l c p{10cm}}
+$\sigma$ : & $\synt{Node} \times \synt{Var} \partialfunc \synt{SexpValue}$ & Partial function representing each node's store \\\\
+$\omega$ : & $\synt{World} \partialfunc \sigma$ & Partial function representing each executed world's final store \\\\
+$\pi$ : & $2^{\synt{Node}}$ & Current authorized set of principals \\\\
+$\rho$ : & $\synt{Node}$ & Current execution location \\\\
+$\mu$ : & $(\synt{Sexp} \times \synt{Sexp}) \partialfunc \synt{Sexp}$ & Partial(!) function which merges two divergent data structures \\\\
+$\Downarrow_{\synt{Com}}$ : & $(\synt{Com} \times \sigma \times \omega \times \pi \times \rho \times \mu) \partialfunc (\sigma \times \omega)$  & Commands step to a new store and new set of hypothetical worlds\\\\
+$\Downarrow_{\synt{Sexp}}$ : & $(\synt{Sexp} \times \sigma \times \pi) \partialfunc \synt{SexpValue}$ & Sexps step to a value if they can be evaluated \\\\
+$\Downarrow_{\synt{Bool}}$ : & $(\synt{Bool} \times \sigma \times \pi) \partialfunc \synt{BoolValue}$ & Bools step to a value if they can be evaluated \\\\
 \end{tabular}
 
 \subsection{Basic commands}
@@ -338,7 +338,7 @@ In this semantics, \textsc{At} is effectively a noop/passthrough, resulting in b
 \begin{prooftree}
 \AxiomC{$\omega[u] = \sigma_{\text{hyp}}$}
 \AxiomC{$\forall v \in \sigma_{\text{hyp}}.\ \sigma_{\text{merge}}[v] = \mu(\sigma_\text{curr}[v], \sigma_\text{hyp}[v])$}
-\AxiomC{$\forall v \not\in \sigma_{\text{hyp}}. \not\exists s. \sigma_{\text{merge}}[v] = s$}
+\AxiomC{$\forall v \notin \sigma_{\text{hyp}}. \nexists s. \sigma_{\text{merge}}[v] = s$}
 \ELabel{Commit}
 \TrinaryInfC{$\config{\commitcom{u}, \sigma_{\text{curr}}, \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma_{\text{merge}} ; \sigma_{\text{curr}}, \omega}$}
 \end{prooftree}
