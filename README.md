@@ -1,10 +1,10 @@
 # Opal Semantics
 
-Alex Renda, Cornell
-Harrison Goldstein, Cornell
-Sarah Bird, Facebook
-Chris Quirk, Microsoft
-Adrian Sampson, Cornell
+Alex Renda,
+Harrison Goldstein,
+Sarah Bird,
+Chris Quirk,
+Adrian Sampson
 
 ## Contents
 
