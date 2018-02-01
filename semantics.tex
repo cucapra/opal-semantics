@@ -112,60 +112,60 @@ Well-formedness conditions:
 
 \subsection{Terminology}
 \begin{tabular}{l c l}
+$\Sigma$ : & $2^{\synt{Node} \times \synt{Var}}$ & Set of variables in scope \\
 $\Omega$ : & $2^{\synt{World}}$ & Set of worlds in scope \\
-$\Pi$ : & $2^{\synt{Node}}$ & Set of nodes giving permission to access variables \\
-$\Sigma$ : & $2^{\synt{Node} \times \synt{Var}}$ & Set of variables in scope
+$\Pi$ : & $2^{\synt{Node}}$ & Set of nodes giving permission to access variables
 \end{tabular}
 
 \subsection{Commands}
 
 Commands follow an affine typing scheme for worlds, wherein worlds can be used \textit{at most} once. This is achieved by a conservative judgement over commands: declaring a hypothetical world puts it into scope, committing it takes it out of scope, and if statements take the intersection of available worlds after each branch.
 
-The typing judgement for commands is a relation $R \subseteq \Omega \times \Pi \times \Sigma \times \synt{Com} \times \Omega$, where intuitively the first three members are the state before the command is executed, and the final $\Omega$ is the conservative judgement of the set of available worlds after the command is executed.
+The typing judgement for commands is a relation $R \subseteq \Sigma \times \Omega \times \Pi \times \synt{Com} \times \Omega$, where intuitively the first three members are the state before the command is executed, and the final $\Omega$ is the conservative judgement of the set of available worlds after the command is executed.
 
 \begin{prooftree}
 \AxiomC{}
 \TLabel{Skip}
-\UnaryInfC{$\Omega, \Pi, \Sigma \vdash \skipcom : \Omega$}
+\UnaryInfC{$\Sigma, \Omega, \Pi \vdash \skipcom : \Omega$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\Omega, \Pi, \Sigma \vdash c_1 : \Omega'$}
-\AxiomC{$\Omega', \Pi, \Sigma \vdash c_2 : \Omega''$}
+\AxiomC{$\Sigma, \Omega, \Pi \vdash c_1 : \Omega'$}
+\AxiomC{$\Sigma, \Omega', \Pi \vdash c_2 : \Omega''$}
 \TLabel{Seq}
-\BinaryInfC{$\Omega, \Pi, \Sigma \vdash c_1 ; c_2 : \Omega''$}
+\BinaryInfC{$\Sigma, \Omega, \Pi \vdash c_1 ; c_2 : \Omega''$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\Omega, \Pi, \Sigma \vdash b : \textsc{Bool}$}
-\AxiomC{$\Omega, \Pi, \Sigma \vdash c_1 : \Omega'$}
-\AxiomC{$\Omega, \Pi, \Sigma \vdash c_2 : \Omega''$}
+\AxiomC{$\Sigma, \Omega, \Pi \vdash b : \textsc{Bool}$}
+\AxiomC{$\Sigma, \Omega, \Pi \vdash c_1 : \Omega'$}
+\AxiomC{$\Sigma, \Omega, \Pi \vdash c_2 : \Omega''$}
 \TLabel{If}
-\TrinaryInfC{$\Omega, \Pi, \Sigma \vdash \ifcom{b}{c_1}{c_2} : \Omega' \cap \Omega''$}
+\TrinaryInfC{$\Sigma, \Omega, \Pi \vdash \ifcom{b}{c_1}{c_2} : \Omega' \cap \Omega''$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\varnothing, \Pi, \Sigma \vdash c : \Omega'$}
+\AxiomC{$\Sigma, \varnothing, \Pi \vdash c : \Omega'$}
 \TLabel{AssignWorld}
-\UnaryInfC{$\Omega, \Pi, \Sigma \vdash \assgncom{u}{\hypwrld{c}} : \Omega \cup \{u\}$}
+\UnaryInfC{$\Sigma, \Omega, \Pi \vdash \assgncom{u}{\hypwrld{c}} : \Omega \cup \{u\}$}
 \end{prooftree}
 
 \begin{prooftree}
 \AxiomC{$u \in \Omega$}
 \TLabel{CommitWorld}
-\UnaryInfC{$\Omega, \Pi, \Sigma \vdash \commitcom{u} : \Omega \setminus \{u\}$}
+\UnaryInfC{$\Sigma, \Omega, \Pi \vdash \commitcom{u} : \Omega \setminus \{u\}$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\Omega, \Pi \cup \{n\}, \Sigma \vdash c : \Omega'$}
+\AxiomC{$\Sigma, \Omega, \Pi \cup \{n\} \vdash c : \Omega'$}
 \TLabel{With}
-\UnaryInfC{$\Omega, \Pi, \Sigma \vdash \withcom{n}{c} : \Omega'$}
+\UnaryInfC{$\Sigma, \Omega, \Pi \vdash \withcom{n}{c} : \Omega'$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\Omega, \Pi, \Sigma \vdash c : \Omega'$}
+\AxiomC{$\Sigma, \Omega, \Pi \vdash c : \Omega'$}
 \TLabel{At}
-\UnaryInfC{$\Omega, \Pi, \Sigma \vdash \atcom{n}{c} : \Omega'$}
+\UnaryInfC{$\Sigma, \Omega, \Pi \vdash \atcom{n}{c} : \Omega'$}
 \end{prooftree}
 
 \subsection{Booleans}
@@ -173,71 +173,71 @@ The typing judgement for commands is a relation $R \subseteq \Omega \times \Pi \
 \begin{prooftree}
 \AxiomC{}
 \TLabel{True}
-\UnaryInfC{$\Omega, \Pi, \Sigma \vdash \true : \textsc{Bool}$}
+\UnaryInfC{$\Sigma, \Omega, \Pi \vdash \true : \textsc{Bool}$}
 \end{prooftree}
 
 \begin{prooftree}
 \AxiomC{}
 \TLabel{False}
-\UnaryInfC{$\Omega, \Pi, \Sigma \vdash \false : \textsc{Bool}$}
+\UnaryInfC{$\Sigma, \Omega, \Pi \vdash \false : \textsc{Bool}$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\Omega, \Pi, \Sigma \vdash b_1 : \textsc{Bool}$}
-\AxiomC{$\Omega, \Pi, \Sigma \vdash b_2 : \textsc{Bool}$}
+\AxiomC{$\Sigma, \Omega, \Pi \vdash b_1 : \textsc{Bool}$}
+\AxiomC{$\Sigma, \Omega, \Pi \vdash b_2 : \textsc{Bool}$}
 \TLabel{Conj}
-\BinaryInfC{$\Omega, \Pi, \Sigma \vdash b_1 \land b_2 : \textsc{Bool}$}
+\BinaryInfC{$\Sigma, \Omega, \Pi \vdash b_1 \land b_2 : \textsc{Bool}$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\Omega, \Pi, \Sigma \vdash b_1 : \textsc{Bool}$}
-\AxiomC{$\Omega, \Pi, \Sigma \vdash b_2 : \textsc{Bool}$}
+\AxiomC{$\Sigma, \Omega, \Pi \vdash b_1 : \textsc{Bool}$}
+\AxiomC{$\Sigma, \Omega, \Pi \vdash b_2 : \textsc{Bool}$}
 \TLabel{Disj}
-\BinaryInfC{$\Omega, \Pi, \Sigma \vdash b_1 \lor b_2 : \textsc{Bool}$}
+\BinaryInfC{$\Sigma, \Omega, \Pi \vdash b_1 \lor b_2 : \textsc{Bool}$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\Omega, \Pi, \Sigma \vdash s_1 : \textsc{Sexp}$}
-\AxiomC{$\Omega, \Pi, \Sigma \vdash s_2 : \textsc{Sexp}$}
+\AxiomC{$\Sigma, \Omega, \Pi \vdash s_1 : \textsc{Sexp}$}
+\AxiomC{$\Sigma, \Omega, \Pi \vdash s_2 : \textsc{Sexp}$}
 \TLabel{Eq}
-\BinaryInfC{$\Omega, \Pi, \Sigma \vdash s_1 = s_2 : \textsc{Bool}$}
+\BinaryInfC{$\Sigma, \Omega, \Pi \vdash s_1 = s_2 : \textsc{Bool}$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\Omega, \Pi, \Sigma \vdash s_1 : \textsc{Sexp}$}
-\AxiomC{$\Omega, \Pi, \Sigma \vdash s_2 : \textsc{Sexp}$}
+\AxiomC{$\Sigma, \Omega, \Pi \vdash s_1 : \textsc{Sexp}$}
+\AxiomC{$\Sigma, \Omega, \Pi \vdash s_2 : \textsc{Sexp}$}
 \TLabel{Mem}
-\BinaryInfC{$\Omega, \Pi, \Sigma \vdash s_1 \in s_2 : \textsc{Bool}$}
+\BinaryInfC{$\Sigma, \Omega, \Pi \vdash s_1 \in s_2 : \textsc{Bool}$}
 \end{prooftree}
 
 \subsection{Sexps}
 
 \begin{prooftree}
 \AxiomC{}
-\TLabel{EmptySet}
-\UnaryInfC{$\Omega, \Pi, \Sigma \vdash \varnothing : \textsc{Sexp}$}
+\TLabel{EmptySexp}
+\UnaryInfC{$\Sigma, \Omega, \Pi \vdash \varnothing : \textsc{Sexp}$}
 \end{prooftree}
 
 \begin{prooftree}
 \AxiomC{$n \in \Pi$}
 \AxiomC{$(n, v) \in \Sigma$}
 \TLabel{Variable}
-\BinaryInfC{$\Omega, \Pi, \Sigma \vdash n.v : \textsc{Sexp}$}
+\BinaryInfC{$\Sigma, \Omega, \Pi \vdash n.v : \textsc{Sexp}$}
 \end{prooftree}
 
 \begin{prooftree}
+\AxiomC{$u \in \Omega$}
 \AxiomC{$n \in \Pi$}
 \AxiomC{$(n, v) \in \Sigma$}
-\AxiomC{$\Omega, \Pi, \Sigma \vdash w : \textsc{World}$}
 \TLabel{Weight}
-\TrinaryInfC{$\Omega, \Pi, \Sigma \vdash w.n.v : \textsc{Sexp}$}
+\TrinaryInfC{$\Sigma, \Omega, \Pi \vdash u.n.v : \textsc{Sexp}$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\Omega, \Pi, \Sigma \vdash s_1 : \textsc{Sexp}$}
-\AxiomC{$\Omega, \Pi, \Sigma \vdash s_2 : \textsc{Sexp}$}
+\AxiomC{$\Sigma, Omega, \Pi \vdash s_1 : \textsc{Sexp}$}
+\AxiomC{$\Sigma, Omega, \Pi \vdash s_2 : \textsc{Sexp}$}
 \TLabel{Cons}
-\BinaryInfC{$\Omega, \Pi, \Sigma \vdash (s_1 . s_2) : \textsc{Sexp}$}
+\BinaryInfC{$\Sigma, Omega, \Pi \vdash (s_1 . s_2) : \textsc{Sexp}$}
 \end{prooftree}
 
 
@@ -314,131 +314,129 @@ In this semantics, \textsc{At} is effectively a noop/passthrough, resulting in b
 \AxiomC{$\forall v \in \sigma_{\text{hyp}}.\ \sigma_{\text{merge}}[v] = \mu(\sigma_\text{curr}[v], \sigma_\text{hyp}[v])$}
 \AxiomC{$\forall v \notin \sigma_{\text{hyp}}. \nexists s. \sigma_{\text{merge}}[v] = s$}
 \ELabel{Commit}
-\TrinaryInfC{$\config{\commitcom{u}, \sigma_{\text{curr}}, \omega, \pi, \rho, \eta, \mu} \Downarrow \config{\sigma_{\text{merge}} ; \sigma_{\text{curr}}, \omega}$}
+\TrinaryInfC{$\config{\commitcom{u}, \sigma_{\text{curr}}, \omega, \pi, \rho, \mu} \Downarrow \config{\sigma_{\text{merge}} ; \sigma_{\text{curr}}, \omega}$}
 \end{prooftree}
 
 \subsection{Sexps}
 
 \begin{prooftree}
 \AxiomC{}
-\RightLabel{$\textsc{EmptySet}$}
-\UnaryInfC{$\config{\varnothing, \sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow \varnothing$}
+\ELabel{EmptySexp}
+\UnaryInfC{$\config{\varnothing, \sigma, \omega, \pi} \Downarrow \varnothing$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\config{s_1, \sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow s_1'$}
-\AxiomC{$\config{s_2, \sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow s_2'$}
-\RightLabel{$\textsc{Cons}$}
-\BinaryInfC{$\config{(s_1 . s_2), \sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow (s_1' . s_2')$}
+\AxiomC{$\config{s_1, \sigma, \omega, \pi} \Downarrow s_1'$}
+\AxiomC{$\config{s_2, \sigma, \omega, \pi} \Downarrow s_2'$}
+\ELabel{Cons}
+\BinaryInfC{$\config{(s_1 . s_2), \sigma, \omega, \pi} \Downarrow (s_1' . s_2')$}
 \end{prooftree}
 
 \begin{prooftree}
 \AxiomC{$n \in \pi$}
 \AxiomC{$\sigma[n,v] = s$}
-\RightLabel{$\textsc{Var}$}
-\BinaryInfC{$\config{n.v, \sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow s$}
+\ELabel{Var}
+\BinaryInfC{$\config{n.v, \sigma, \omega, \pi} \Downarrow s$}
 \end{prooftree}
 
 \begin{prooftree}
 \AxiomC{$n \in \pi$}
 \AxiomC{$\omega[u] = \sigma_\text{hyp}$}
 \AxiomC{$\sigma_\text{hyp}[n,v] = s$}
-\RightLabel{$\textsc{Weight}$}
-\TrinaryInfC{$\config{u.n.v, \sigma, \omega, \pi, \rho, \eta, \mu} \Downarrow s$}
+\ELabel{Weight}
+\TrinaryInfC{$\config{u.n.v, \sigma, \omega, \pi} \Downarrow s$}
 \end{prooftree}
 
 \subsection{Bools}
 \begin{prooftree}
 \AxiomC{}
-\RightLabel{$\textsc{True}$}
-\UnaryInfC{$\config{\true, \sigma, \pi} \Downarrow \true$}
+\ELabel{True}
+\UnaryInfC{$\config{\true, \sigma, \omega, \pi} \Downarrow \true$}
 \end{prooftree}
 \begin{prooftree}
 \AxiomC{}
-\RightLabel{$\textsc{False}$}
-\UnaryInfC{$\config{\false, \sigma, \pi} \Downarrow \false$}
-\end{prooftree}
-
-\begin{prooftree}w
-\AxiomC{$\config{b_1, \sigma, \pi} \Downarrow \true$}
-\AxiomC{$\config{b_2, \sigma, \pi} \Downarrow \true$}
-\RightLabel{$\textsc{AndTrue}$}
-\BinaryInfC{$\config{b_1 \land b_2, \sigma, \pi} \Downarrow \true$}
+\ELabel{False}
+\UnaryInfC{$\config{\false, \sigma, \omega, \pi} \Downarrow \false$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\config{b_1, \sigma, \pi} \Downarrow \false$}
-\RightLabel{$\textsc{AndFalseL}$}
-\UnaryInfC{$\config{b_1 \land b_2, \sigma, \pi} \Downarrow \false$}
+\AxiomC{$\config{b_1, \sigma, \omega, \pi} \Downarrow \true$}
+\AxiomC{$\config{b_2, \sigma, \omega, \pi} \Downarrow \true$}
+\ELabel{AndTrue}
+\BinaryInfC{$\config{b_1 \land b_2, \sigma, \omega, \pi} \Downarrow \true$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\config{b_2, \sigma, \pi} \Downarrow \false$}
-\RightLabel{$\textsc{AndFalseR}$}
-\UnaryInfC{$\config{b_1 \land b_2, \sigma, \pi} \Downarrow \false$}
+\AxiomC{$\config{b_1, \sigma, \omega, \pi} \Downarrow \false$}
+\ELabel{AndFalseL}
+\UnaryInfC{$\config{b_1 \land b_2, \sigma, \omega, \pi} \Downarrow \false$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\config{b_1, \sigma, \pi} \Downarrow \false$}
-\AxiomC{$\config{b_2, \sigma, \pi} \Downarrow \false$}
-\RightLabel{$\textsc{OrFalse}$}
-\BinaryInfC{$\config{b_1 \lor b_2, \sigma, \pi} \Downarrow \false$}
+\AxiomC{$\config{b_2, \sigma, \omega, \pi} \Downarrow \false$}
+\ELabel{AndFalseR}
+\UnaryInfC{$\config{b_1 \land b_2, \sigma, \omega, \pi} \Downarrow \false$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\config{b_1, \sigma, \pi} \Downarrow \true$}
-\RightLabel{$\textsc{OrTrueL}$}
-\UnaryInfC{$\config{b_1 \lor b_2, \sigma, \pi} \Downarrow \true$}
+\AxiomC{$\config{b_1, \sigma, \omega, \pi} \Downarrow \false$}
+\AxiomC{$\config{b_2, \sigma, \omega, \pi} \Downarrow \false$}
+\ELabel{OrFalse}
+\BinaryInfC{$\config{b_1 \lor b_2, \sigma, \omega, \pi} \Downarrow \false$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\config{b_2, \sigma, \pi} \Downarrow \true$}
-\RightLabel{$\textsc{OrTrueR}$}
-\UnaryInfC{$\config{b_1 \lor b_2, \sigma, \pi} \Downarrow \true$}
+\AxiomC{$\config{b_1, \sigma, \omega, \pi} \Downarrow \true$}
+\ELabel{OrTrueL}
+\UnaryInfC{$\config{b_1 \lor b_2, \sigma, \omega, \pi} \Downarrow \true$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\config{s_1, \sigma, \pi} \Downarrow \varnothing$}
-\AxiomC{$\config{s_2, \sigma, \pi} \Downarrow \varnothing$}
-\RightLabel{$\textsc{EqTrue}$}
-\BinaryInfC{$\config{s_1 = s_2, \sigma, \pi} \Downarrow \true$}
+\AxiomC{$\config{b_2, \sigma, \omega, \pi} \Downarrow \true$}
+\ELabel{OrTrueR}
+\UnaryInfC{$\config{b_1 \lor b_2, \sigma, \omega, \pi} \Downarrow \true$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\config{s_1, \sigma, \pi} \Downarrow ({{s_v}_1}_1 . {{s_v}_1}_2)$}
-\AxiomC{$\config{s_2, \sigma, \pi} \Downarrow \varnothing$}
-\RightLabel{$\textsc{EqFalseL}$}
-\BinaryInfC{$\config{s_1 = s_2, \sigma, \pi} \Downarrow \false$}
+\AxiomC{$\config{s_1, \sigma, \omega, \pi} \Downarrow \varnothing$}
+\AxiomC{$\config{s_2, \sigma, \omega, \pi} \Downarrow \varnothing$}
+\ELabel{EqTrue}
+\BinaryInfC{$\config{s_1 = s_2, \sigma, \omega, \pi} \Downarrow \true$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\config{s_1, \sigma, \pi} \Downarrow \varnothing$}
-\AxiomC{$\config{s_2, \sigma, \pi} \Downarrow ({{s_v}_2}_1 . {{s_v}_2}_2)$}
-\RightLabel{$\textsc{EqFalseR}$}
-\BinaryInfC{$\config{s_1 = s_2, \sigma, \pi} \Downarrow \false$}
+\AxiomC{$\config{s_1, \sigma, \omega, \pi} \Downarrow ({{s_v}_1}_1 . {{s_v}_1}_2)$}
+\AxiomC{$\config{s_2, \sigma, \omega, \pi} \Downarrow \varnothing$}
+\ELabel{EqFalseL}
+\BinaryInfC{$\config{s_1 = s_2, \sigma, \omega, \pi} \Downarrow \false$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\config{s_1, \sigma, \pi} \Downarrow ({{s_v}_1}_1 . {{s_v}_1}_2)$}
-\AxiomC{$\config{s_2, \sigma, \pi} \Downarrow ({{s_v}_2}_1 . {{s_v}_2}_2)$}
+\AxiomC{$\config{s_1, \sigma, \omega, \pi} \Downarrow \varnothing$}
+\AxiomC{$\config{s_2, \sigma, \omega, \pi} \Downarrow ({{s_v}_2}_1 . {{s_v}_2}_2)$}
+\ELabel{EqFalseR}
+\BinaryInfC{$\config{s_1 = s_2, \sigma, \omega, \pi} \Downarrow \false$}
+\end{prooftree}
+
+\begin{prooftree}
+\AxiomC{$\config{s_1, \sigma, \omega, \pi} \Downarrow ({{s_v}_1}_1 . {{s_v}_1}_2)$}
+\AxiomC{$\config{s_2, \sigma, \omega, \pi} \Downarrow ({{s_v}_2}_1 . {{s_v}_2}_2)$}
 \AxiomC{$\config{{{s_v}_1}_1 = {{s_v}_2}_1 \land {{s_v}_1}_2 = {{s_v}_2}_2, \sigma, \pi} \Downarrow b$}
-\RightLabel{$\textsc{EqProp}$}
-\TrinaryInfC{$\config{s_1 = s_2, \sigma, \pi} \Downarrow b$}
+\ELabel{EqProp}
+\TrinaryInfC{$\config{s_1 = s_2, \sigma, \omega, \pi} \Downarrow b$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\config{s_1, \sigma, \pi} \Downarrow {s_v}_1$}
-\AxiomC{$\config{s_2, \sigma, \pi} \Downarrow \varnothing$}
-\RightLabel{$\textsc{MemFalse}$}
-\BinaryInfC{$\config{s_1 \in s_2, \sigma, \pi} \Downarrow \false$}
+\AxiomC{$\config{s_2, \sigma, \omega, \pi} \Downarrow \varnothing$}
+\ELabel{MemFalse}
+\UnaryInfC{$\config{s_1 \in s_2, \sigma, \omega, \pi} \Downarrow \false$}
 \end{prooftree}
 
 \begin{prooftree}
-\AxiomC{$\config{s_1, \sigma, \pi} \Downarrow {s_v}_1$}
-\AxiomC{$\config{s_2, \sigma, \pi} \Downarrow ({{s_v}_2}_1 . {{s_v}_2}_2)$}
-\AxiomC{$\config{{s_v}_1 = {{s_v}_2}_1 \lor {s_v}_1 \in {{s_v}_2}_2, \sigma, \pi} \Downarrow b$}
-\RightLabel{$\textsc{MemProp}$}
-\TrinaryInfC{$\config{s_1 \in s_2, \sigma, \pi} \Downarrow b$}
+\AxiomC{$\config{s_2, \sigma, \omega, \pi} \Downarrow ({{s_v}_2}_1 . {{s_v}_2}_2)$}
+\AxiomC{$\config{s_1 = {{s_v}_2}_1 \lor s_1 \in {{s_v}_2}_2, \sigma, \omega, \pi} \Downarrow b$}
+\ELabel{MemProp}
+\BinaryInfC{$\config{s_1 \in s_2, \sigma, \omega, \pi} \Downarrow b$}
 \end{prooftree}
 
 \textsc{EqProp} and \textsc{MemProp} are well-founded proof trees since the sexp step is idempotent, and the two props decrease on size of sexp, so the maximum depth of the proof tree is proportional to the maximum depth of the sexp values
