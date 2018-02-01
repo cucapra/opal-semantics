@@ -14,6 +14,8 @@ Adrian Sampson, Cornell
 4. Theorems and proofs over the Coq implementation of semantics: [src/proofs.v]
 5. An unverified "compiler" from a nicer syntax to the Coq deep embedding: [src/compiler]
 
+
+[//]: # These are meant to link to GitHub code, while leaving the above pretty
 [semantics.pdf]: semantics.pdf
 [src/semantics.v]: src/semantics.v
 [src/interp.v]: src/interp.v
