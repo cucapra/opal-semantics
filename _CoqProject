@@ -4,8 +4,8 @@ lib/cpdtlib/CpdtTactics.v
 lib/cpdtlib/DepList.v
 lib/cpdtlib/MoreSpecif.v
 
--R src OpalSrc
+-R src Opal
 
-src/OpalUtil.v
 src/OpalSemantics.v
 src/OpalInterp.v
+src/OpalProofs.v
