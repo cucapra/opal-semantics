@@ -5,7 +5,6 @@ Set Implicit Arguments.
 Axiom proof_irrelevance :
   forall (P : Prop) (p q : P), p = q.
 
-
 Module Opal (NodeType VarType WorldVarType: OrderedType.OrderedType).
   Module NodeVarType : OrderedType.OrderedType with
         Definition t := (NodeType.t * VarType.t)%type
@@ -111,7 +110,7 @@ Module Opal (NodeType VarType WorldVarType: OrderedType.OrderedType).
         forall (l r: sexp) sigma omega pi (lv rv: sexp_value),
           EvalSexp l sigma omega pi lv ->
           EvalSexp r sigma omega pi rv ->
-          EvalSexp EmptySexp sigma omega pi (exist _ EmptySexp EmptySexpIsValue)
+          EvalSexp (ConsSexp l r) sigma omega pi (exist _ EmptySexp EmptySexpIsValue)
     | EVar :
         forall (n: node) (v: var) sigma omega pi (s: sexp_value),
           pi_mem n pi = true ->
@@ -344,5 +343,4 @@ Module Opal (NodeType VarType WorldVarType: OrderedType.OrderedType).
         well_formed_com (AtCom n c) Omega Pi Sigma Omega'
     .
   End WellFormed.
-
 End Opal.
