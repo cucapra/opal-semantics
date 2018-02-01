@@ -6,3 +6,4 @@
 *.vo
 *.d
 Makefile.coq
+CoqMakefile.conf
