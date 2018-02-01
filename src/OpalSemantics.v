@@ -1,4 +1,4 @@
-Require Import CpdtTactics Structures.OrderedType FMapAVL FMapFacts Setoid Morphisms.
+Require Import CpdtTactics Structures.OrderedType FMapAVL FMapFacts Setoid Morphisms Wf.
 
 Set Implicit Arguments.
 
@@ -6,10 +6,13 @@ Axiom proof_irrelevance :
   forall (P : Prop) (p q : P), p = q.
 
 
-Module Opal (NodeType VarType WorldVarType OpType: OrderedType.OrderedType).
+Module Opal (NodeType VarType WorldVarType: OrderedType.OrderedType).
   Module NodeVarType : OrderedType.OrderedType with
         Definition t := (NodeType.t * VarType.t)%type
     := OrderedTypeEx.PairOrderedType(NodeType)(VarType).
+  Module WorldNodeVarType : OrderedType.OrderedType with
+        Definition t := (WorldVarType.t * NodeVarType.t)%type
+    := OrderedTypeEx.PairOrderedType(WorldVarType)(NodeVarType).
 
   Module NodeMap : FMapInterface.WS with Module E := NodeType :=
     FMapAVL.Make(NodeType).
@@ -23,14 +26,9 @@ Module Opal (NodeType VarType WorldVarType OpType: OrderedType.OrderedType).
     FMapAVL.Make(WorldVarType).
   Module WorldVarMapFacts := FMapFacts.Properties(WorldVarMap).
 
-  Module OpMap : FMapInterface.WS with Module E := OpType :=
-    FMapAVL.Make(OpType).
-  Module OpMapFacts := FMapFacts.Properties(OpMap).
-
   Definition node := NodeType.t.
   Definition var := VarType.t.
   Definition worldvar := WorldVarType.t.
-  Definition op := OpType.t.
 
   Inductive com :=
   | SkipCom : com
@@ -38,9 +36,14 @@ Module Opal (NodeType VarType WorldVarType OpType: OrderedType.OrderedType).
   | IfCom : bool -> com -> com -> com
   | WithCom : node -> com -> com
   | AtCom : node -> com -> com
-  | OpCom : op -> com
   | WorldAssignCom : worldvar -> com -> com
   | CommitCom : worldvar -> com
+  with
+  sexp :=
+  | EmptySexp : sexp
+  | VarSexp : node -> var -> sexp
+  | WeightSexp : worldvar -> node -> var -> sexp
+  | ConsSexp : sexp -> sexp -> sexp
   with
   bool :=
   | TrueBool : bool
@@ -49,36 +52,24 @@ Module Opal (NodeType VarType WorldVarType OpType: OrderedType.OrderedType).
   | DisjBool : bool -> bool -> bool
   | EqBool : sexp -> sexp -> bool
   | MemBool : sexp -> sexp -> bool
-  with
-  sexp :=
-  | EmptySexp : sexp
-  | ConsSexp : sexp -> sexp -> sexp
-  | VarSexp : node -> var -> sexp
-  | WeightSexp : worldvar -> node -> var -> sexp
   .
 
-  Inductive bool_value :=
-  | TrueBoolValue : bool_value
-  | FalseBoolValue : bool_value
+  Inductive bool_is_value : bool -> Prop :=
+  | TrueBoolIsValue : bool_is_value TrueBool
+  | FalseBoolIsValue : bool_is_value FalseBool
   .
-  Definition bool_of_bool_value (b: bool_value) : bool :=
-    match b with
-    | TrueBoolValue => TrueBool
-    | FalseBoolValue => FalseBool
-    end.
+  Hint Constructors bool_is_value.
 
-  Inductive sexp_value :=
-  | EmptySexpValue : sexp_value
-  | ConsSexpValue : sexp_value -> sexp_value -> sexp_value
+  Definition bool_value := { b: bool | bool_is_value b }.
+
+  Inductive sexp_is_value : sexp -> Prop :=
+  | EmptySexpIsValue : sexp_is_value EmptySexp
+  | ConsSexpIsValue : forall l r,
+      sexp_is_value l -> sexp_is_value r -> sexp_is_value (ConsSexp l r)
   .
-  Fixpoint sexp_of_sexp_value (s: sexp_value) : sexp :=
-    match s with
-    | EmptySexpValue => EmptySexp
-    | ConsSexpValue s1 s2 =>
-      ConsSexp (sexp_of_sexp_value s1)
-               (sexp_of_sexp_value s2)
-    end.
+  Hint Constructors sexp_is_value.
 
+  Definition sexp_value := { s: sexp | sexp_is_value s }.
 
   Section Evaluation.
     Definition sigma_t : Type := NodeVarMap.t sexp_value.
@@ -88,23 +79,12 @@ Module Opal (NodeType VarType WorldVarType OpType: OrderedType.OrderedType).
     Definition sigma_set (sigma: sigma_t) (n: node) (v: var) (s: sexp_value) : sigma_t :=
       NodeVarMap.add (n,v) s sigma.
 
-    Definition sigmas_t : Type := list sigma_t.
-    Fixpoint sigmas_get (sigmas: sigmas_t) (n: node) (v: var) : option sexp_value :=
-      match sigmas with
-      | nil => None
-      | (cons sigma sigmas) =>
-        match sigma_get sigma n v with
-        | Some s => Some s
-        | None => sigmas_get sigmas n v
-        end
-      end.
-
-    Definition omega_t : Type := WorldVarMap.t (sigma_t * sigma_t).
-    Definition omega_0 : omega_t := WorldVarMap.empty (sigma_t * sigma_t).
-    Definition omega_get (omega: omega_t) (u: worldvar) : option (sigma_t * sigma_t) :=
+    Definition omega_t : Type := WorldVarMap.t sigma_t.
+    Definition omega_0 : omega_t := WorldVarMap.empty sigma_t.
+    Definition omega_get (omega: omega_t) (u: worldvar) : option sigma_t :=
       WorldVarMap.find u omega.
-    Definition omega_set (omega: omega_t) (u: worldvar) (sig_orig sig_hyp: sigma_t) : omega_t :=
-      WorldVarMap.add u (sig_orig, sig_hyp) omega.
+    Definition omega_set (omega: omega_t) (u: worldvar) (sig_hyp: sigma_t) : omega_t :=
+      WorldVarMap.add u sig_hyp omega.
 
     Definition pi_t : Type := NodeMap.t unit.
     Definition pi_0 : pi_t := NodeMap.empty unit.
@@ -115,180 +95,362 @@ Module Opal (NodeType VarType WorldVarType OpType: OrderedType.OrderedType).
 
     Definition rho_t := node.
 
-    Definition eta_t : Type := OpMap.t (node * var * (sexp_value -> sexp_value)).
-
-    Definition eta_get (eta: eta_t) (o: op) :
-      option (node * var * (sexp_value -> sexp_value)) :=
-      OpMap.find o eta.
-
-
-    Definition mu_t : Type := NodeVarMap.t (sexp_value -> sexp_value -> sexp_value -> sexp_value).
+    Definition mu_t : Type := NodeVarMap.t (sexp_value -> sexp_value -> sexp_value).
 
     Definition mu_get (mu: mu_t) (n: node) (v: var) :
-      option (sexp_value -> sexp_value -> sexp_value -> sexp_value) :=
+      option (sexp_value -> sexp_value -> sexp_value) :=
       NodeVarMap.find (n,v) mu.
 
-    Fixpoint eval_eq (l r: sexp_value) : bool_value :=
-      match l, r with
-      | EmptySexpValue, EmptySexpValue => TrueBoolValue
-      | ConsSexpValue ll lr, ConsSexpValue rl rr =>
-        match eval_eq ll rl, eval_eq ll rl with
-        | TrueBoolValue, TrueBoolValue => TrueBoolValue
-        | _, _ => FalseBoolValue
-        end
-      | _, _ => FalseBoolValue
-      end.
 
-    Fixpoint eval_mem (l r: sexp_value) : bool_value :=
-      match r with
-      | EmptySexpValue => FalseBoolValue
-      | ConsSexpValue rl rr =>
-        match eval_eq l rl, eval_mem l rr with
-        | TrueBoolValue, _ => TrueBoolValue
-        | _, TrueBoolValue => TrueBoolValue
-        | _, _ => FalseBoolValue
-        end
-      end.
+    Inductive EvalSexp
+      : sexp -> sigma_t -> omega_t -> pi_t -> sexp_value -> Prop :=
+    | EEmptySexp :
+        forall sigma omega pi,
+          EvalSexp EmptySexp sigma omega pi (exist _ EmptySexp EmptySexpIsValue)
+    | ECons :
+        forall (l r: sexp) sigma omega pi (lv rv: sexp_value),
+          EvalSexp l sigma omega pi lv ->
+          EvalSexp r sigma omega pi rv ->
+          EvalSexp EmptySexp sigma omega pi (exist _ EmptySexp EmptySexpIsValue)
+    | EVar :
+        forall (n: node) (v: var) sigma omega pi (s: sexp_value),
+          pi_mem n pi = true ->
+          sigma_get sigma n v = Some s ->
+          EvalSexp (VarSexp n v) sigma omega pi s
+    | EWeight :
+        forall (u: worldvar) (n: node) (v: var) (sig_hyp: sigma_t) sigma omega pi (s: sexp_value),
+          pi_mem n pi = true ->
+          omega_get omega u = Some sig_hyp ->
+          sigma_get sig_hyp n v = Some s ->
+          EvalSexp (WeightSexp u n v) sigma omega pi s
+    .
 
-    Fixpoint eval_sexp (s: sexp) (sigmas: sigmas_t) (omega: omega_t) (pi: pi_t) : option sexp_value :=
-      match s with
-      | EmptySexp => Some EmptySexpValue
-      | VarSexp n v =>
-        if pi_mem n pi then
-          sigmas_get sigmas n v
-        else
-          None
-      | WeightSexp w n v =>
-        match omega_get omega w with
-        | Some (sigma_orig, sigma_hyp) =>
-          sigmas_get (cons sigma_hyp sigmas) n v
-        | None =>
-          None
-        end
-      | ConsSexp s1 s2 =>
-        match eval_sexp s1 sigmas omega pi,
-              eval_sexp s2 sigmas omega pi with
-        | Some s1v, Some s2v =>
-          Some (ConsSexpValue s1v s2v)
-        | _, _ => None
-        end
-      end.
+    Inductive EvalBool
+      : bool -> sigma_t -> omega_t -> pi_t -> bool_value -> Prop :=
+    | ETrue :
+        forall sigma omega pi,
+          EvalBool TrueBool sigma omega pi (exist _ TrueBool TrueBoolIsValue)
+    | EFalse :
+        forall sigma omega pi,
+          EvalBool FalseBool sigma omega pi (exist _ FalseBool FalseBoolIsValue)
+    | EAndTrue :
+        forall (l r: bool) sigma omega pi,
+          EvalBool l sigma omega pi (exist _ TrueBool TrueBoolIsValue) ->
+          EvalBool r sigma omega pi (exist _ TrueBool TrueBoolIsValue) ->
+          EvalBool (ConjBool l r) sigma omega pi (exist _ TrueBool TrueBoolIsValue)
+    | EAndFalseL :
+        forall (l r: bool) sigma omega pi,
+          EvalBool l sigma omega pi (exist _ FalseBool FalseBoolIsValue) ->
+          EvalBool (ConjBool l r) sigma omega pi (exist _ FalseBool FalseBoolIsValue)
+    | EAndFalseR :
+        forall (l r: bool) sigma omega pi,
+          EvalBool r sigma omega pi (exist _ FalseBool FalseBoolIsValue) ->
+          EvalBool (ConjBool l r) sigma omega pi (exist _ FalseBool FalseBoolIsValue)
+    | EOrFalse :
+        forall (l r: bool) sigma omega pi,
+          EvalBool l sigma omega pi (exist _ FalseBool FalseBoolIsValue) ->
+          EvalBool r sigma omega pi (exist _ FalseBool FalseBoolIsValue) ->
+          EvalBool (DisjBool l r) sigma omega pi (exist _ FalseBool FalseBoolIsValue)
+      | EOrTrueL :
+          forall (l r: bool) sigma omega pi,
+            EvalBool l sigma omega pi (exist _ TrueBool TrueBoolIsValue) ->
+            EvalBool (DisjBool l r) sigma omega pi (exist _ TrueBool TrueBoolIsValue)
+      | EOrTrueR :
+          forall (l r: bool) sigma omega pi,
+            EvalBool r sigma omega pi (exist _ TrueBool TrueBoolIsValue) ->
+            EvalBool (DisjBool l r) sigma omega pi (exist _ TrueBool TrueBoolIsValue)
+      | EEqTrue :
+          forall (l r: sexp) sigma omega pi,
+            EvalSexp l sigma omega pi (exist _ EmptySexp EmptySexpIsValue) ->
+            EvalSexp r sigma omega pi (exist _ EmptySexp EmptySexpIsValue) ->
+            EvalBool (EqBool l r) sigma omega pi (exist _ TrueBool TrueBoolIsValue)
+      | EEqFalseL :
+          forall (l r ll' lr': sexp) sigma omega pi lp,
+            EvalSexp l sigma omega pi (exist _ (ConsSexp ll' lr') lp) ->
+            EvalSexp r sigma omega pi (exist _ EmptySexp EmptySexpIsValue) ->
+            EvalBool (EqBool l r) sigma omega pi (exist _ FalseBool FalseBoolIsValue)
+      | EEqFalseR :
+          forall (l r rl' rr': sexp) sigma omega pi rp,
+            EvalSexp l sigma omega pi (exist _ EmptySexp EmptySexpIsValue) ->
+            EvalSexp r sigma omega pi (exist _ (ConsSexp rl' rr') rp) ->
+            EvalBool (EqBool l r) sigma omega pi (exist _ FalseBool FalseBoolIsValue)
+      | EEqProp :
+          forall (l r ll lr rl rr: sexp) (b: bool) sigma omega pi llp lrp rlp rrp bp,
+            EvalSexp l sigma omega pi (exist _ (ConsSexp ll lr) (ConsSexpIsValue llp lrp)) ->
+            EvalSexp r sigma omega pi (exist _ (ConsSexp rl rr) (ConsSexpIsValue rlp rrp)) ->
+            EvalBool (ConjBool (EqBool ll rl) (EqBool lr rr)) sigma omega pi (exist _ b bp) ->
+            EvalBool (EqBool l r) sigma omega pi (exist _ b bp)
+      | EMemFalse :
+          forall l r sigma omega pi,
+            EvalSexp r sigma omega pi (exist _ EmptySexp EmptySexpIsValue) ->
+            EvalBool (MemBool l r) sigma omega pi (exist _ FalseBool FalseBoolIsValue)
+      | EMemProp :
+          forall (l r rl rr: sexp) (b: bool) sigma omega pi rp bp,
+            EvalSexp r sigma omega pi (exist _ (ConsSexp rl rr) rp) ->
+            EvalBool (DisjBool (EqBool l rl) (MemBool l rr)) sigma omega pi (exist _ b bp) ->
+            EvalBool (MemBool l r) sigma omega pi (exist _ b bp)
+    .
 
-    Fixpoint eval_bool (b: bool) (sigmas: sigmas_t) (omega: omega_t) (pi: pi_t) : option bool_value :=
-      match b with
-      | TrueBool => Some TrueBoolValue
-      | FalseBool => Some FalseBoolValue
-      | ConjBool b1 b2 =>
-        match eval_bool b1 sigmas omega pi,
-              eval_bool b2 sigmas omega pi
-        with
-        | Some TrueBoolValue, Some b2' => Some b2'
-        | Some FalseBoolValue, Some b2' => Some FalseBoolValue
-        | _, _ => None
-        end
-      | DisjBool b1 b2 =>
-        match eval_bool b1 sigmas omega pi,
-              eval_bool b2 sigmas omega pi
-        with
-        | Some FalseBoolValue, Some b2' => Some b2'
-        | Some TrueBoolValue, Some b2' => Some TrueBoolValue
-        | _, _ => None
-        end
-      | EqBool s1 s2 =>
-        match eval_sexp s1 sigmas omega pi,
-              eval_sexp s2 sigmas omega pi
-        with
-        | Some l, Some r => Some (eval_eq l r)
-        | _, _ => None
-        end
-      | MemBool s1 s2 =>
-        match eval_sexp s1 sigmas omega pi,
-              eval_sexp s2 sigmas omega pi
-        with
-        | Some l, Some r => Some (eval_mem l r)
-        | _, _ => None
-        end
-      end.
+      Inductive EvalCom
+        : com -> sigma_t -> omega_t -> pi_t -> rho_t -> mu_t -> sigma_t -> omega_t -> Prop :=
+      | ESkip :
+          forall sigma omega pi rho mu,
+            EvalCom SkipCom sigma omega pi rho mu sigma omega
+      | ESeq :
+          forall c1 c2 sigma omega pi rho mu sigma' sigma'' omega' omega'',
+            EvalCom c1 sigma omega pi rho mu sigma' omega' ->
+            EvalCom c2 sigma' omega' pi rho mu sigma'' omega'' ->
+            EvalCom (SeqCom c1 c2) sigma omega pi rho mu sigma'' omega''
+      | EIfTrue :
+          forall c1 c2 b sigma omega pi rho mu sigma' omega',
+            EvalBool b sigma omega pi (exist _ TrueBool TrueBoolIsValue) ->
+            EvalCom c1 sigma omega pi rho mu sigma' omega' ->
+            EvalCom (IfCom b c1 c2) sigma omega pi rho mu sigma' omega'
+      | EIfFalse :
+          forall c1 c2 b sigma omega pi rho mu sigma' omega',
+            EvalBool b sigma omega pi (exist _ FalseBool FalseBoolIsValue) ->
+            EvalCom c2 sigma omega pi rho mu sigma' omega' ->
+            EvalCom (IfCom b c1 c2) sigma omega pi rho mu sigma' omega'
+      | EAt :
+          forall n c sigma omega pi rho mu sigma' omega',
+            EvalCom c sigma omega pi n mu sigma' omega' ->
+            EvalCom (AtCom n c) sigma omega pi rho mu sigma' omega'
+      | EWith :
+          forall n c sigma omega pi rho mu sigma' omega',
+            EvalCom c sigma omega (pi_add n pi) rho mu sigma' omega' ->
+            EvalCom (WithCom n c) sigma omega pi rho mu sigma' omega'
+      | EHyp :
+          forall u c sigma omega pi rho mu sigma_hyp omega_hyp,
+            EvalCom c sigma omega_0 pi rho mu sigma_hyp omega_hyp ->
+            EvalCom (WorldAssignCom u c) sigma omega pi rho mu sigma (omega_set omega u sigma_hyp)
+      | ECommit :
+          forall u sigma omega pi rho mu sigma_hyp sigma_merge,
+            omega_get omega u = Some sigma_hyp ->
+            (forall n v,
+                sigma_get sigma_hyp n v = None ->
+                sigma_get sigma_merge n v = sigma_get sigma n v
+            ) ->
+            (forall n v,
+                sigma_get sigma n v = None ->
+                sigma_get sigma_merge n v = sigma_get sigma_hyp n v
+            ) ->
+            (forall n v sc sh f,
+                sigma_get sigma n v = Some sc ->
+                sigma_get sigma_hyp n v = Some sh ->
+                mu_get mu n v = Some f ->
+                sigma_get sigma_merge n v = Some (f sc sh)
+            ) ->
+            EvalCom (CommitCom u) sigma omega pi rho mu sigma_merge omega
+    .
 
-    Fixpoint eval_com (c: com) (sigmas: sigmas_t) (omega: omega_t) (pi: pi_t) (rho: rho_t) (eta: eta_t) (mu: mu_t) : option (sigma_t * omega_t) :=
-      match sigmas
-            as sigmas_
-            return (sigmas = sigmas_ -> option (sigma_t * omega_t))
-      with
-      | nil => fun H => None
-      | cons sigma sigmas => fun H =>
-        match c with
-        | SkipCom => Some (sigma, omega)
-        | SeqCom c1 c2 =>
-          match eval_com c1 (cons sigma sigmas) omega pi rho eta mu with
-          | None => None
-          | Some (sigma', omega') =>
-            eval_com c2 (cons sigma' sigmas) omega' pi rho eta mu
-          end
-        | IfCom b c1 c2 =>
-          match eval_bool b (cons sigma sigmas) omega pi with
-          | Some TrueBoolValue =>
-            eval_com c1 (cons sigma sigmas) omega pi rho eta mu
-          | Some FalseBoolValue =>
-            eval_com c2 (cons sigma sigmas) omega pi rho eta mu
-          | _ => None
-          end
-        | WithCom n c =>
-          eval_com c (cons sigma sigmas) omega (pi_add n pi) rho eta mu
-        | AtCom n c =>
-          eval_com c (cons sigma sigmas) omega pi n eta mu
-        | OpCom op =>
-          match eta_get eta op with
-          | Some (n, v, eta_mapper) =>
-            match sigmas_get (cons sigma sigmas) n v with
-            | Some sv =>
-              Some ((sigma_set sigma n v (eta_mapper sv)), omega)
-            | None => None
+    Fixpoint eval_eq (l r: sexp) {lp: sexp_is_value l} {rp: sexp_is_value r}
+      : bool_value.
+      unshelve
+        refine (
+          match l as l', r as r'
+                return l=l' -> r=r' -> bool_value
+          with
+          | EmptySexp, EmptySexp =>
+            fun _ _ =>
+              exist _ TrueBool _
+          | (ConsSexp ll lr), (ConsSexp rl rr) =>
+            fun _ _ =>
+              let leqv := eval_eq ll rl _ _ in
+              let leq := proj1_sig leqv in
+              let reqv := eval_eq lr rr _ _ in
+              let req := proj1_sig reqv in
+              match leq as leq', req as req'
+                    return leq=leq' -> req=req' -> bool_value
+              with
+              | TrueBool, TrueBool =>
+                fun _ _ =>
+                  exist _ TrueBool _
+              | _, _ =>
+                fun _ _ =>
+                  exist _ FalseBool _
+              end eq_refl eq_refl
+          | _, _ =>
+            fun _ _ =>
+              exist _ FalseBool _
+          end eq_refl eq_refl) ;
+        auto ;
+        subst ;
+        inversion lp ;
+        inversion rp ;
+        eauto.
+    Defined.
+
+    Arguments eval_eq l r : clear implicits.
+
+    Fixpoint eval_mem
+             (l r: sexp) {lp: sexp_is_value l} {rp: sexp_is_value r}
+      : bool_value.
+      unshelve
+        refine (
+          match r as r' return r=r' -> bool_value with
+          | EmptySexp => fun _ => exist _ FalseBool _
+          | ConsSexp rl rr =>
+            fun _ =>
+              let eqv := eval_eq l rl _ _ in
+              let eq := proj1_sig eqv in
+              match eq as eq' return eq=eq' -> bool_value with
+              | TrueBool =>
+                fun _ => exist _ TrueBool _
+              | FalseBool =>
+                fun _ => eval_mem l rr lp _
+              | _ =>
+                fun _ => _
+              end eq_refl
+          | _ => fun _ => exist _ FalseBool _
+          end eq_refl
+        ) ;
+        subst ;
+        eauto ;
+        inversion rp ;
+        eauto.
+    Defined.
+
+    Arguments eval_mem l r : clear implicits.
+
+    Fixpoint eval_sexp (s: sexp) (sigma: sigma_t) (omega: omega_t) (pi: pi_t) {struct s} : option sexp_value.
+      unshelve
+        refine (
+          match s with
+          | EmptySexp => Some (exist _ EmptySexp _)
+          | VarSexp n v =>
+            if pi_mem n pi then
+              sigma_get sigma n v
+            else
+              None
+          | WeightSexp w n v =>
+            match omega_get omega w with
+            | Some sigma_hyp =>
+              sigma_get sigma_hyp n v
+            | None =>
+              None
             end
-          | None => None
-          end
-        | WorldAssignCom u c =>
-          match eval_com c (cons sigma_0 (cons sigma sigmas)) omega_0 pi rho eta mu with
-          | None => None
-          | Some (sigma_hyp, omega_hyp) =>
-            Some (sigma, omega_set omega u sigma sigma_hyp)
-          end
-        | CommitCom w =>
-          match omega_get omega w with
-          | None => None
-          | Some (sigma_orig, sigma_hyp) =>
-            let merged_sigma : NodeVarMap.t (option sexp_value) :=
-                NodeVarMap.mapi
-                  (fun key sh =>
-                     match key with
-                     | (n, v) =>
-                       match mu_get mu n v,
-                             sigmas_get (cons sigma sigmas) n v,
-                             sigmas_get (cons sigma_orig sigmas) n v
-                       with
-                       | Some merge_func, Some sc, Some so =>
-                         Some (merge_func so sh sc)
-                       | _, _, _ => None
-                       end
-                     end)
-                  sigma_hyp
-            in
-            match
-              NodeVarMap.fold
-                (fun k vo so =>
-                   match vo, so with
-                   | Some v, Some s =>
-                     Some (NodeVarMap.add k v s)
-                   | _, _ => None
-                   end) merged_sigma (Some sigma)
+          | ConsSexp s1 s2 =>
+            match eval_sexp s1 sigma omega pi,
+                  eval_sexp s2 sigma omega pi with
+            | Some (exist _ s1v _), Some (exist _ s2v _) =>
+              Some (exist _ (ConsSexp s1v s2v) _)
+            | _, _ => None
+            end
+          end)
+      .
+      constructor.
+      constructor ; auto.
+    Defined.
+
+
+    Fixpoint eval_bool (b: bool) (sigma: sigma_t) (omega: omega_t) (pi: pi_t) {struct b} : option bool_value.
+      unshelve
+        refine (
+          match b with
+          | TrueBool => Some (exist _ TrueBool _)
+          | FalseBool => Some (exist _ FalseBool _)
+          | ConjBool b1 b2 =>
+            match eval_bool b1 sigma omega pi,
+                  eval_bool b2 sigma omega pi
             with
-            | None => None
-            | Some sigma' =>
-              Some (sigma', omega)
+            | Some (exist _ TrueBool _), Some b2' => Some b2'
+            | Some (exist _ FalseBool _), Some b2' => Some (exist _ FalseBool _)
+            | _, _ => None
             end
-          end
-        end
-      end eq_refl.
+          | DisjBool b1 b2 =>
+            match eval_bool b1 sigma omega pi,
+                  eval_bool b2 sigma omega pi
+            with
+            | Some (exist _ FalseBool _), Some b2' => Some b2'
+            | Some (exist _ TrueBool _), Some b2' => Some (exist _ TrueBool _)
+            | _, _ => None
+            end
+          | EqBool s1 s2 =>
+            match eval_sexp s1 sigma omega pi,
+                  eval_sexp s2 sigma omega pi
+            with
+            | Some (exist _ l lp), Some (exist _ r rp) => Some (eval_eq l r lp rp)
+            | _, _ => None
+            end
+          | MemBool s1 s2 =>
+            match eval_sexp s1 sigma omega pi,
+                  eval_sexp s2 sigma omega pi
+            with
+            | Some (exist _ l lp), Some (exist _ r rp) => Some (eval_mem l r lp rp)
+            | _, _ => None
+            end
+          end)
+      ;
+      eauto.
+    Defined.
+
+    Fixpoint eval_com (c: com) (sigma: sigma_t) (omega: omega_t) (pi: pi_t) (rho: rho_t) (mu: mu_t) {struct c} : option (sigma_t * omega_t).
+      unshelve (
+          refine (
+              match c with
+              | SkipCom => Some (sigma, omega)
+              | SeqCom c1 c2 =>
+                match eval_com c1 sigma omega pi rho mu with
+                | None => None
+                | Some (sigma', omega') =>
+                  eval_com c2 sigma' omega' pi rho mu
+                end
+              | IfCom b c1 c2 =>
+                match eval_bool b sigma omega pi with
+                | Some (exist _ TrueBool _) =>
+                  eval_com c1 sigma omega pi rho mu
+                | Some (exist _ FalseBool _) =>
+                  eval_com c2 sigma omega pi rho mu
+                | _ => None
+                end
+              | WithCom n c =>
+                eval_com c sigma omega (pi_add n pi) rho mu
+              | AtCom n c =>
+                eval_com c sigma omega pi n mu
+              | WorldAssignCom u c =>
+                match eval_com c sigma omega_0 pi rho mu with
+                | None => None
+                | Some (sigma_hyp, omega_hyp) =>
+                  Some (sigma, omega_set omega u sigma_hyp)
+                end
+              | CommitCom w =>
+                match omega_get omega w with
+                | None => None
+                | Some sigma_hyp =>
+                  let merged_sigma : NodeVarMap.t (option sexp_value) :=
+                      NodeVarMap.mapi
+                        (fun key sh =>
+                           match key with
+                           | (n, v) =>
+                             match mu_get mu n v,
+                                   sigma_get sigma n v
+                             with
+                             | Some merge_func, Some sc =>
+                               Some (merge_func sc sh)
+                             | _, _ => None
+                             end
+                           end)
+                        sigma_hyp
+                  in
+                  match
+                    NodeVarMap.fold
+                      (fun k vo so =>
+                         match vo, so with
+                         | Some v, Some s =>
+                           Some (NodeVarMap.add k v s)
+                         | _, _ => None
+                         end) merged_sigma (Some sigma)
+                  with
+                  | None => None
+                  | Some sigma' =>
+                    Some (sigma', omega)
+                  end
+                end
+              end
+            )
+        ).
+    Defined.
+
   End Evaluation.
 
   Section WellFormed.
@@ -324,123 +486,96 @@ Module Opal (NodeType VarType WorldVarType OpType: OrderedType.OrderedType).
       NodeMap.add n tt Pi
     .
 
-    Definition H_t := OpMap.t unit.
-    Definition H_in (H: H_t) (o: op) : Prop :=
-      OpMap.MapsTo o tt H
-    .
-    Definition H_add (H: H_t) (o: op) : H_t :=
-      OpMap.add o tt H
-    .
-
-    Inductive well_formed_sexp : sexp -> Omega_t -> Sigma_t -> Pi_t -> Prop :=
-    | EmptySexpWellFormed : forall Omega Sigma Pi,
-        well_formed_sexp EmptySexp Omega Sigma Pi
-    | ConsSexpWellFormed : forall l r Omega Sigma Pi,
-        well_formed_sexp l Omega Sigma Pi ->
-        well_formed_sexp r Omega Sigma Pi ->
-        well_formed_sexp (ConsSexp l r) Omega Sigma Pi
-    | VarSexpWellFormed : forall n v Omega Sigma Pi,
-        Sigma_in Sigma n v ->
+    Inductive well_formed_sexp : sexp -> Omega_t -> Pi_t -> Sigma_t -> Prop :=
+    | TEmptySexp : forall Omega Pi Sigma,
+        well_formed_sexp EmptySexp Omega Pi Sigma
+    | TVariable : forall n v Omega Pi Sigma,
         Pi_in Pi n ->
-        well_formed_sexp (VarSexp n v) Omega Sigma Pi
-    | WeightSexpWellFormed : forall u n v Omega Sigma Pi,
+        Sigma_in Sigma n v ->
+        well_formed_sexp (VarSexp n v) Omega Pi Sigma
+    | TWeight : forall u n v Omega Pi Sigma,
         Omega_in Omega u ->
         Sigma_in Sigma n v ->
         Pi_in Pi n ->
-        well_formed_sexp (WeightSexp u n v) Omega Sigma Pi
+        well_formed_sexp (WeightSexp u n v) Omega Pi Sigma
+    | TCons : forall l r Omega Pi Sigma,
+        well_formed_sexp l Omega Pi Sigma ->
+        well_formed_sexp r Omega Pi Sigma ->
+        well_formed_sexp (ConsSexp l r) Omega Pi Sigma
     .
 
-    Inductive well_formed_bool : bool -> Omega_t -> Sigma_t -> Pi_t -> Prop :=
-    | TrueBoolWellFormed : forall Omega Sigma Pi,
-        well_formed_bool TrueBool Omega Sigma Pi
-    | FalseBoolWellFormed : forall Omega Sigma Pi,
-        well_formed_bool FalseBool Omega Sigma Pi
-    | ConjBoolWellFormed : forall l r Omega Sigma Pi,
-        well_formed_bool l Omega Sigma Pi ->
-        well_formed_bool r Omega Sigma Pi ->
-        well_formed_bool (ConjBool l r) Omega Sigma Pi
-    | DisjBoolWellFormed : forall l r Omega Sigma Pi,
-        well_formed_bool l Omega Sigma Pi ->
-        well_formed_bool r Omega Sigma Pi ->
-        well_formed_bool (DisjBool l r) Omega Sigma Pi
-    | EqSexpWellFormed : forall l r Omega Sigma Pi,
-        well_formed_sexp l Omega Sigma Pi ->
-        well_formed_sexp r Omega Sigma Pi ->
-        well_formed_bool (EqBool l r) Omega Sigma Pi
-    | MemSexpWellFormed : forall l r Omega Sigma Pi,
-        well_formed_sexp l Omega Sigma Pi ->
-        well_formed_sexp r Omega Sigma Pi ->
-        well_formed_bool (MemBool l r) Omega Sigma Pi
+    Inductive well_formed_bool : bool -> Omega_t -> Pi_t -> Sigma_t -> Prop :=
+    | TTrue : forall Omega Pi Sigma,
+        well_formed_bool TrueBool Omega Pi Sigma
+    | TFalse : forall Omega Pi Sigma,
+        well_formed_bool FalseBool Omega Pi Sigma
+    | TConj : forall l r Omega Pi Sigma,
+        well_formed_bool l Omega Pi Sigma ->
+        well_formed_bool r Omega Pi Sigma ->
+        well_formed_bool (ConjBool l r) Omega Pi Sigma
+    | TDisj : forall l r Omega Pi Sigma,
+        well_formed_bool l Omega Pi Sigma ->
+        well_formed_bool r Omega Pi Sigma ->
+        well_formed_bool (DisjBool l r) Omega Pi Sigma
+    | TEq : forall l r Omega Pi Sigma,
+        well_formed_sexp l Omega Pi Sigma ->
+        well_formed_sexp r Omega Pi Sigma ->
+        well_formed_bool (EqBool l r) Omega Pi Sigma
+    | TMem : forall l r Omega Pi Sigma,
+        well_formed_sexp l Omega Pi Sigma ->
+        well_formed_sexp r Omega Pi Sigma ->
+        well_formed_bool (MemBool l r) Omega Pi Sigma
     .
 
-    Inductive well_formed_com : com -> Omega_t -> Sigma_t -> Pi_t -> H_t -> Omega_t -> Prop :=
-    | SkipComWellFormed : forall Omega Sigma Pi H Omega',
-        well_formed_com SkipCom Omega Sigma Pi H Omega'
-    | SeqComWellFormed : forall l r Omega Sigma Pi H Omega' Omega'',
-        well_formed_com l Omega Sigma Pi H Omega' ->
-        well_formed_com r Omega' Sigma Pi H Omega'' ->
-        well_formed_com SkipCom Omega Sigma Pi H Omega''
-    | IfComWellFormed : forall b l r Omega Sigma Pi H Omega' Omega'',
-        well_formed_bool b Omega Sigma Pi ->
-        well_formed_com l Omega Sigma Pi H Omega' ->
-        well_formed_com r Omega Sigma Pi H Omega'' ->
-        well_formed_com (IfCom b l r) Omega Sigma Pi H
-                        (Omega_inter Omega' Omega'')
-    | WithComWellFormed : forall n c Omega Sigma Pi H Omega',
-        well_formed_com c Omega Sigma (Pi_add Pi n) H Omega' ->
-        well_formed_com (WithCom n c) Omega Sigma Pi H Omega'
-    | AtComWellFormed : forall n c Omega Sigma Pi H Omega',
-        well_formed_com c Omega Sigma Pi H Omega' ->
-        well_formed_com (AtCom n c) Omega Sigma Pi H Omega'
-    | WorldAssignComWellFormed : forall u c Omega Sigma Pi H Omega',
-        well_formed_com c Omega_0 Sigma Pi H Omega' ->
-        well_formed_com (WorldAssignCom u c) Omega Sigma Pi H (Omega_add Omega u)
-    | CommitComWellFormed : forall u Omega Sigma Pi H,
+    Inductive well_formed_com : com -> Omega_t -> Pi_t -> Sigma_t -> Omega_t -> Prop :=
+    | TSkip : forall Omega Pi Sigma Omega',
+        well_formed_com SkipCom Omega Pi Sigma Omega'
+    | TSeq : forall l r Omega Pi Sigma Omega' Omega'',
+        well_formed_com l Omega Pi Sigma Omega' ->
+        well_formed_com r Omega' Pi Sigma Omega'' ->
+        well_formed_com (SeqCom l r) Omega Pi Sigma Omega''
+    | TIf : forall b l r Omega Pi Sigma Omega' Omega'',
+        well_formed_bool b Omega Pi Sigma ->
+        well_formed_com l Omega Pi Sigma Omega' ->
+        well_formed_com r Omega Pi Sigma Omega'' ->
+        well_formed_com (IfCom b l r) Omega Pi Sigma (Omega_inter Omega' Omega'')
+    | TAssignWorld : forall u c Omega Pi Sigma Omega',
+        well_formed_com c Omega_0 Pi Sigma Omega' ->
+        well_formed_com (WorldAssignCom u c) Omega Pi Sigma (Omega_add Omega u)
+    | TCommitWorld : forall u Omega Pi Sigma,
         Omega_in Omega u ->
-        well_formed_com (CommitCom u) Omega Sigma Pi H (Omega_remove Omega u)
-    | OpComWellFormed : forall op (Omega: Omega_t) Sigma Pi H Omega,
-        H_in H op ->
-        well_formed_com (OpCom op) Omega Sigma Pi H Omega
+        well_formed_com (CommitCom u) Omega Pi Sigma (Omega_remove Omega u)
+    | TWith : forall n c Omega Pi Sigma Omega',
+        well_formed_com c Omega (Pi_add Pi n) Sigma Omega' ->
+        well_formed_com (WithCom n c) Omega Pi Sigma Omega'
+    | TAt : forall n c Omega Pi Sigma Omega',
+        well_formed_com c Omega Pi Sigma Omega' ->
+        well_formed_com (AtCom n c) Omega Pi Sigma Omega'
     .
   End WellFormed.
 
   Definition omega_reps (omega: omega_t) (Omega: Omega_t) : Prop :=
     forall k, Omega_in Omega k -> (exists v, WorldVarMap.MapsTo k v omega).
 
-  Definition sigmas_reps (sigmas: sigmas_t) (Sigma: Sigma_t) : Prop :=
+  Definition sigma_reps (sigma: sigma_t) (Sigma: Sigma_t) : Prop :=
     forall n v, Sigma_in Sigma n v ->
-                exists val, sigmas_get sigmas n v = Some val.
-
-  Definition eta_reps (eta: eta_t) (H: H_t) : Prop :=
-    forall op, H_in H op ->
-                exists v, eta_get eta op = Some v.
-
-  Definition mu_reps (mu: mu_t) (Sigma: Sigma_t) : Prop :=
-    forall n v, Sigma_in Sigma n v ->
-                exists val, mu_get mu n v = Some val.
+                exists val, sigma_get sigma n v = Some val.
 
   Theorem sexp_progress:
-    forall s omega sigma Omega Sigma Pi,
-      well_formed_sexp s Omega Sigma Pi ->
+    forall s omega sigma Omega Pi Sigma,
+      well_formed_sexp s Omega Pi Sigma ->
       omega_reps omega Omega ->
-      sigmas_reps sigma Sigma ->
+      sigma_reps sigma Sigma ->
       (exists sv, eval_sexp s sigma omega Pi = Some sv).
   Proof.
     induction s ; intros ; inversion H ; subst.
     * unfold eval_sexp. eauto.
-    * specialize (IHs1 omega sigma Omega Sigma Pi).
-      specialize (IHs2 omega sigma Omega Sigma Pi).
-      intuition.
-      inversion H2. inversion H3.
-      unfold eval_sexp.
-      fold eval_sexp.
-      edestruct eval_sexp; edestruct eval_sexp; eauto.
     * assert (pi_mem n Pi = true).
       unfold Pi_in in H8. unfold pi_mem.
       eapply NodeMap.mem_1.
       unfold NodeMap.In. exists tt. auto.
-      unfold sigmas_reps in H1.
-      specialize (H1 n v H4).
+      unfold sigma_reps in H1.
+      specialize (H1 n v H8).
       inversion H1.
       exists x.
       unfold eval_sexp.
@@ -449,6 +584,24 @@ Module Opal (NodeType VarType WorldVarType OpType: OrderedType.OrderedType).
     * assert (pi_mem n Pi = true).
       eapply NodeMap.mem_1.
       unfold NodeMap.In. exists tt. auto.
+
+      unfold eval_sexp.
+      unfold omega_reps in H0.
+      specialize (H0 w).
+      intuition.
+      destruct H3.
+      specialize (WorldVarMap.find_1 H0).
+      intros.
+      unfold omega_get.
+      rewrite H3.
+
+      unfold sigma_reps in H1.
+      specialize (H1 n v).
+      intuition.
+      destruct H4.
+      exists x0.
+      eauto.
+
       unfold omega_reps in H0.
       specialize (H0 w).
       intuition.
@@ -456,14 +609,20 @@ Module Opal (NodeType VarType WorldVarType OpType: OrderedType.OrderedType).
       inversion H3.
       specialize (WorldVarMap.find_1 H0).
       edestruct WorldVarMap.find ; intros ; try discriminate.
-      destruct p.
-      injection H4. intros. subst. clear H4.
+      injection H4 ; clear H4.
+      intros. subst.
       unfold eval_sexp.
       destruct H3.
       unfold omega_get.
       specialize (WorldVarMap.find_1 H0). intros. rewrite H4.
-      unfold sigmas_get.
-      destruct (sigma_get s0 n v) ; eauto.
+      destruct (sigma_get x n v) eqn:? ; eauto.
+    * specialize (IHs1 omega sigma Omega Sigma Pi).
+      specialize (IHs2 omega sigma Omega Sigma Pi).
+      intuition.
+      inversion H2. inversion H3.
+      unfold eval_sexp.
+      fold eval_sexp.
+      edestruct eval_sexp; edestruct eval_sexp; eauto.
   Qed.
 
   Theorem bool_progress:
