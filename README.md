@@ -13,3 +13,7 @@ Adrian Sampson
 3. Coq implementation of an interpreter ([src/OpalInterp.v](src/OpalInterp.v))
 4. Theorems and proofs over the Coq implementation of semantics ([src/OpalProofs.v](src/OpalProofs.v))
 5. An unverified "compiler" from a nicer syntax to the Coq deep embedding ([src/compiler](src/compiler))
+
+## Usage
+
+Run `make` to make everything, `make tex` to regenerate the semantics pdf, and `make coq` to machine check each of the proofs.
