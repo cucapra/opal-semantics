@@ -41,17 +41,20 @@ Module OpalProofs (NodeType VarType WorldVarType: OrderedType.OrderedType).
 
   Theorem commit_movement : True.
   (* Assuming no intermediate reads or writes, moving a "hyp" to its commit does not alter the state of the world *)
+  (* translation to a language that stores original state and com and re-computes each time yields same final state *)
   Proof.
   Admitted.
 
   Theorem hyp_noninterference : True.
   (* Other than weight and commit, hyp worlds have noninterference *)
+  (* Can drop uncommited fresh hyp's everywhere with no effect on final store *)
   Proof.
   Admitted.
 
   Theorem hyp_with_escape_power : True.
   (* No additional power granted by commiting a hyp outside of a "with"
      (since any of its reads or writes must have been permissioned at some point) *)
+  (* Any change committed by a hyp must have been permissioned by a with at some point *)
   Proof.
   Admitted.
 End OpalProofs.
